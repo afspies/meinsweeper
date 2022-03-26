@@ -4,6 +4,10 @@
 
 MeinSweeper is a light-weight framework for running experiments on arbitrary compute nodes
 
+```diff
+- This library is still in alpha, and was written for research purposes. I.e. expect bugs and smelly code!
+```
+
 ## Installation
 
 Use the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.
