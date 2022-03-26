@@ -1,9 +1,7 @@
 from pathlib import Path
 import os
 from .due import *
-
-
-         
+        
 import asyncio
 from re import A
 
@@ -15,14 +13,6 @@ USERNAME = 'afs219'
 SSH_KEY_PATH = os.path.expanduser('~') + '/.ssh/id_doc'
 SSH_TIMEOUT = 5 #seconds
 
-# targets = [
-    # {'type':'ssh', 'params':{'address':'gpu12.doc.ic.ac.uk','username':USERNAME, 'key_path':SSH_KEY_PATH}},
-    # {'type':'ssh', 'params':{'address':'gpu14.doc.ic.ac.uk','username':USERNAME, 'key_path':SSH_KEY_PATH}}]
-targets = []
-for i in range(1, 10):
-    targets.append({'type':'ssh', 'params':{'address':f'gpu{i:02}.doc.ic.ac.uk','username':USERNAME, 'key_path':SSH_KEY_PATH}})
-# for i in range(1, 30):
-    # targets.append({'type':'ssh', 'params':{'address':f'ray{i:02}.doc.ic.ac.uk','username':USERNAME, 'key_path':SSH_KEY_PATH}})
 
 from itertools import product
 

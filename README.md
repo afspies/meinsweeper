@@ -5,11 +5,11 @@
 MeinSweeper is a light-weight framework for running experiments on arbitrary compute nodes
 
 ```diff
-- This library is still in alpha, and was written for research purposes. I.e. expect bugs and smelly code!
+- This is still in alpha, and was written for research
+- I.e. expect bugs and smelly code!
 ```
 
 ## Installation
-
 Use the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.
 
 ```bash
@@ -28,6 +28,10 @@ meinsweeper.run(cfg)
 
 
 ### With Custom Nodes
+#### Subclass and existing node
+Override the initialization, running or logging behaviour of an existing node type.
+If you would like to establish a generic, and robust, communication class which systematically utilizes STDOUT, that would be nice ;).
+
 #### Create a node class
 ```python
 class MyNode(Node):
