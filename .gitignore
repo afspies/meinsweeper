@@ -1,5 +1,6 @@
 *.py[co]
 .vscode
+meinsweeper.egg-info
 *~
 *.DS_Store
 _build/
