@@ -1,48 +1,39 @@
-from pathlib import Path
 import os
 from .due import *
-        
 import asyncio
-from re import A
 
-from tasks import RunManager
-from logger import Logger
+from rich.live import Live
+from .modules import RunManager, Logger, dict_product
 
 # Change these according to your own configuration.
-USERNAME = 'afs219'
-SSH_KEY_PATH = os.path.expanduser('~') + '/.ssh/id_doc'
-SSH_TIMEOUT = 5 #seconds
 
+SSH_TIMEOUT = 5 #seconds
 
 from itertools import product
 
-async def main():
+def run_sweep(cfg):
+    asyncio.run(main(cfg))
+
+async def main(cfg):
     sweep_q = asyncio.Queue() # Workers take from - All sweep cfgs are enqueued here
     log_q = asyncio.Queue() # Workers put into - All log cfgs are enqueued here
 
     # Add the sweep configurations to the sweep q
-    cfg = {}
-    cfg['sweep_params'] ={'h':  [32,16,8,4], 'j': [16,8,4], 'seed':['1923','817','958']}
-    sweep_parameters = product(cfg['sweep_params'])
-
-    stages = copy.deepcopy(cfg['stages'])
-    additional_overrides = [f'model.architecture.h={h}',
-                            f'model.architecture.j={j}',
-                            f'model.training.rng_seed={seed}']
-
-    [await sweep_q.put(i) for i in range(20)]
+    sweep_parameters = dict_product(cfg['sweep_params'])
+    [await sweep_q.put(sweep_run) for sweep_run in sweep_parameters]
 
     # Start the run
-    run_mgr = RunManager(targets, sweep_q, log_q)
+    run_mgr = RunManager(cfg['targets'], sweep_q, log_q)
     logger = Logger(log_q)
 
-    with Live(logger.display, refresh_per_second=3):
+    with Live(logger.display, refresh_per_second=3) as live:
         runs = asyncio.create_task(run_mgr.start_run())
         logs = asyncio.create_task(logger.start_logger())
 
         await asyncio.gather(runs)
         await log_q.join()  # Implicitly awaits logger too
 
+        logger.complete(live) #This could be moved into logger, but requires keeping track of pids
         logs.cancel()
 
 

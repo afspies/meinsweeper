@@ -1,20 +1,19 @@
+from time import time as time_now
+from .utils import get_time_diff
 
-from time import sleep
-
-from rich.live import Live
+from rich.text import Text
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
 
 TABLE_REFRESH_RATE = 5 # Hz
-
-
 
 class Logger():
     def __init__(self, log_q) -> None:
         self.log_q = log_q
         self.table = DisplayTable('Training Progress', 'Info')
         self.display = self.table.table
+        self.start_time = time_now()
 
     async def start_logger(self):
         while True:
@@ -22,6 +21,10 @@ class Logger():
             self.table.update(i, t, cfg)
             self.log_q.task_done()
         
+    def complete(self, live_session):
+        time_elapsed = get_time_diff(self.start_time)
+        msg = f"🚀 Done! Completed {self.table.get_num_procs()} runs in {time_elapsed} 🚀"
+        live_session.update(Panel(Text(msg, style="bold magenta", justify="center")))
 
 class DisplayTable():
     def __init__(self, name: str, table_type: str):
@@ -51,8 +54,10 @@ class DisplayTable():
 
     def add(self, host: str, cfg):
         #! Representation should be generated elsewhere
-        self.host_map[host] = self.progress_bars.add_task("", name=host.split('.')[0]+f'_{cfg}', total=10)
+        self.host_map[host] = self.progress_bars.add_task("", name=host.split('.')[0]+f'_{cfg}', total=5)
     
+    def get_num_procs(self):
+        return len(self.progress_bars.tasks)
 
     def __str__(self):
         return str(self.table)

@@ -1,8 +1,4 @@
 from abc import ABC, abstractmethod
-import os
-from scp import SCPClient
-import time
-import paramiko
 import socket
 import asyncio
 import asyncssh
@@ -12,8 +8,6 @@ import xml.etree.ElementTree as ET
 MINIMUM_VRAM =  8 # in GigaBytes
 USAGE_CRITERION = 0.8 # percentage (float) or -1 => no processes other than xorg
 MAX_PROCESSES = -1 # -1 => no limit, Otherwise number of processes = min(#nodes, #tbc_runs)
-
-
 
 class RunManager:
     """ The RunManager spawns processes on the target nodes from the pool of available ones
@@ -32,13 +26,8 @@ class RunManager:
         [await self.target_q.put(target) for target in self.targets]
         
         # Spawn workers - this needs to be ongoing? 
-        # while not self.task_q.empty():
-            # print("Spawning worker")
-            # if self.running_proc < self.max_proc:
         [self.tasks.append(asyncio.create_task(self.spawn_worker())) for _ in range(self.max_proc)]
-        # self.running_proc += 1
         await asyncio.gather(*self.tasks)
-        # await self.task_q.join() # Run until all tasks have been executed
 
     async def spawn_worker(self) -> None:
         while not self.task_q.empty():
@@ -52,8 +41,14 @@ class RunManager:
                     connected = await node.open_connection()
 
             # Run task once a connection was opened
+            if self.task_q.empty(): # In case someone else was faster NOTE should instead timeout here
+                self.target_q.task_done()
+                return
+
+            # Get a task and run it
+            # NOTE should add timeout here in case of async funkiness
             cfg = await self.task_q.get() # Get next task from queue
-            success = await node.run_cmd('cd ./run_training;python -u run.py',cfg)
+            success = await node.run('cd ./run_training;python -u run.py',cfg)
             if success:
                 await self.target_q.put(target)
             else:
@@ -70,13 +65,13 @@ class ComputeNode(ABC):
     def run(self):
         pass
     
-    @abstractmethod
-    def put(self, src, target, recursive=True):
-        pass
+    # @abstractmethod
+    # def put(self, src, target, recursive=True):
+    #     pass
 
-    @abstractmethod
-    def get(self, src, target, recursive=True):
-        pass
+    # @abstractmethod
+    # def get(self, src, target, recursive=True):
+    #     pass
 
 
 class SSHTarget(ComputeNode):
@@ -92,10 +87,10 @@ class SSHTarget(ComputeNode):
             self.conn = await asyncssh.connect(address,username=username, known_hosts=None, login_timeout=timeout,
                                                client_keys=[key_path] if key_path else None)
             # self.scp = SCPClient(self.client.get_transport())
-        except paramiko.AuthenticationException as auth_err:
+        except asyncssh.AuthenticationException as auth_err:
             print(f"didn't conenct to {address}")
             raise ValueError('Authentication failed. Check user name and SSH key configuration.') from auth_err
-        except paramiko.SSHException as ssh_err:
+        except asyncssh.SSHException as ssh_err:
             print(f"didn't conenct to {address}")
             raise ValueError("No Session") from ssh_err
         except socket.gaierror as target_err:
@@ -103,7 +98,7 @@ class SSHTarget(ComputeNode):
             return False
         return True
 
-    async def run_cmd(self, command, cfg):
+    async def run(self, command, cfg):
         """ 
         Should be non-blocking and return whever a signal is recieved
         """
@@ -136,6 +131,3 @@ class SSHTarget(ComputeNode):
     
     def scp_get(self, src, dst, recursive=True):
         self.scp.get(src, dst, recursive=recursive)
-
-if __name__ == "__main__":
-    main()

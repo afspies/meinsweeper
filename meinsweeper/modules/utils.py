@@ -97,3 +97,39 @@ def assign_free_gpus(threshold_vram_usage=1500, max_gpus=2):
     # print(f'Using GPUs {gpus_to_use}' if gpus_to_use else 'No free GPUs found')
 # ----------------------------------------------------------------------------------------------------------------------
 
+# ----------------------------------------------------------------------------------------------------------------------
+# Random Stuff
+from pathlib import Path
+from contextlib import contextmanager
+# Taken from https://stackoverflow.com/questions/41742317/how-can-i-change-directory-with-python-pathlib
+@contextmanager
+def set_directory(path: Path):
+    # Sets the cwd within the contex
+    origin = Path().absolute()
+    try:
+        os.chdir(path)
+        yield
+    finally:
+        os.chdir(origin)
+
+from datetime import datetime
+from time import time
+def get_time_diff(start_time):
+    # It took me almost 30 minutes to get this working
+    # Kill me 
+    # Expects starttime to be a datetime time
+    if isinstance(start_time, float):
+        start_time = datetime.fromtimestamp(start_time)
+    dt = datetime.fromtimestamp(time()) - start_time
+    hours, remainder = divmod(dt.seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    f = ''
+    if hours > 0:
+        f += f'{hours} Hours, '
+    if minutes > 0:
+        f += f'{minutes} Minutes '
+    if  (hours + minutes) > 0:
+        f += 'and '
+    f += f'{seconds} Seconds'
+    return f 
+# ----------------------------------------------------------------------------------------------------------------------
