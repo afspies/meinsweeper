@@ -2,7 +2,11 @@ import os
 from .due import *
 import asyncio
 
+# from rich.console import Console
 from rich.live import Live
+global console
+# console = Console()
+
 from .modules import RunManager, Logger, dict_product
 
 # Change these according to your own configuration.
@@ -11,19 +15,18 @@ SSH_TIMEOUT = 5 #seconds
 
 from itertools import product
 
-def run_sweep(cfg):
-    asyncio.run(main(cfg))
+def run_sweep(cmd_list, targets):
+    asyncio.run(main(cmd_list, targets))
 
-async def main(cfg):
+async def main(cmd_list, targets):
     sweep_q = asyncio.Queue() # Workers take from - All sweep cfgs are enqueued here
     log_q = asyncio.Queue() # Workers put into - All log cfgs are enqueued here
 
-    # Add the sweep configurations to the sweep q
-    sweep_parameters = dict_product(cfg['sweep_params'])
-    [await sweep_q.put(sweep_run) for sweep_run in sweep_parameters]
+    # sweep_parameters = cfg['sweep_parameters']
+    [await sweep_q.put(sweep_run) for sweep_run in cmd_list]
 
     # Start the run
-    run_mgr = RunManager(cfg['targets'], sweep_q, log_q)
+    run_mgr = RunManager(targets, sweep_q, log_q)
     logger = Logger(log_q)
 
     with Live(logger.display, refresh_per_second=3) as live:
