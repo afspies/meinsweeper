@@ -86,7 +86,7 @@ class RunManager:
                     # XLA_PYTHON_CLIENT_MEM_FRACTION=.XX
             cmd = f"""source ~/.bashrc;
                       conda activate jax;
-                      XLA_PYTHON_CLIENT_MEM_FRACTION=.7;
+                      XLA_PYTHON_CLIENT_MEM_FRACTION=.85;
                       cd ./relational_slots;
                       {cfg}"""
             success = await node.run(cmd, label)
@@ -135,10 +135,15 @@ class SSHTarget(ComputeNode):
                                                client_keys=[key_path] if key_path else None)
         except asyncssh.PermissionDenied  as auth_err:
             print(f"didn't conenct to {address}")
-            raise ValueError('Authentication failed. Check user name and SSH key configuration.') from auth_err
+            # raise ValueError('Authentication failed. Check user name and SSH key configuration.') from auth_err
+            return False
         except asyncssh.DisconnectError as ssh_err:
             print(f"disconnected from {address}")
-            raise ValueError("No Session") from ssh_err
+            # raise ValueError("No Session") from ssh_err
+            return False
+        except (OSError, TimeoutError):
+            print(f"timeout from {address}")
+            return False
         except socket.gaierror as target_err:
             print(f"Could not connect to {address}") 
             return False
@@ -191,6 +196,8 @@ class SSHTarget(ComputeNode):
     @staticmethod
     def parse_log_line(line):
         out = None
+        #! FIX this can fail if the log line is part of an error message - we will try to parse
+        #! but the f-strings won't have been evaluated (meaning we can't convert {step} or {loss} to float)
         if '[[LOG_ACCURACY TRAIN]]' in line:
             out = {}
             line = line.split('[[LOG_ACCURACY TRAIN]]')[1]

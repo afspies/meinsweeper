@@ -17,6 +17,7 @@ class Logger():
         self.log_q = log_q
         self.table = DisplayTable('Training Progress', 'Info')
         self.display = self.table.table
+        # can't get procs from table to count, as this includes failed runs
         self.start_time = time_now()
 
     async def start_logger(self):
@@ -27,7 +28,7 @@ class Logger():
         
     def complete(self, live_session):
         time_elapsed = get_time_diff(self.start_time)
-        msg = f"🚀 Done! Completed {self.table.get_num_procs()} runs in {time_elapsed} 🚀"
+        msg = f"🚀 Done! Completed {self.table.num_runs_completed} runs in {time_elapsed} 🚀" 
         live_session.update(Panel(Text(msg, style="bold magenta", justify="center")))
 
 #! -------------------------------------------------------
@@ -42,7 +43,8 @@ class DisplayTable():
         self.name = name
         # self.table_type = table_type
         self.table = Table(title=name)
-        self.table.add_column("Progress", style="cyan", justify="right")
+        self.table.add_column("Progress", style="cyan", justify="right")        
+        self.num_runs_completed = 0
         # self.table.add_column("Info")
         self.progress_bars = Progress( TextColumn(
         "[bold blue]{task.fields[name]}: {task.percentage:.0f}%"
@@ -70,6 +72,8 @@ class DisplayTable():
             host_pid = self.host_map[host]
             self.progress_bars.update(host_pid, **progress)
             if progress.get('status', '')=='failed' or self.progress_bars.tasks[host_pid].finished:
+                if self.progress_bars.tasks[host_pid].finished:
+                    self.num_runs_completed += 1
                 # self.progress_bars.remove_task(host_pid) #! doesn't work properly for some reason... (even if cleaning up pids)
                 self.progress_bars.tasks[host_pid].visible = False
                 del self.host_map[host]
