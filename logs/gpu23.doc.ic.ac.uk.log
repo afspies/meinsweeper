@@ -1,0 +1,110 @@
+start log at 1669128741.8679638
+gpu23.doc.ic.ac.uk 34 running
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 1; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 2; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 3; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 4; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 5; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 6; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 7; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 8; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 9; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 [[LOG_ACCURACY TRAIN]] Step: 10; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 34 
+gpu23.doc.ic.ac.uk 61 running
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 1; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 2; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 3; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 4; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 5; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 6; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 7; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 8; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 9; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 61 [[LOG_ACCURACY TRAIN]] Step: 10; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 running
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 1; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 2; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 3; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 4; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 5; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 6; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 7; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 8; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 9; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 [[LOG_ACCURACY TRAIN]] Step: 10; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 101 
+gpu23.doc.ic.ac.uk 151 running
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 1; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 2; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 3; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 4; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 5; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 6; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 7; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 8; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 9; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 [[LOG_ACCURACY TRAIN]] Step: 10; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 151 
+gpu23.doc.ic.ac.uk 193 running
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 1; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 2; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 3; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 4; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 5; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 6; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 7; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 8; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 9; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 [[LOG_ACCURACY TRAIN]] Step: 10; Losses: Train:0.1
+
+gpu23.doc.ic.ac.uk 193 

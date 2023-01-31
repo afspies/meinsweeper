@@ -1,0 +1,6 @@
+start log at 1669140779.9967113
+gpu18.doc.ic.ac.uk 10 running
+gpu18.doc.ic.ac.uk 10 [[LOG_ACCURACY TRAIN]] Step: 1; Losses: Train:0.1
+
+gpu18.doc.ic.ac.uk 10 [[LOG_ACCURACY TRAIN]] Step: 2; Losses: Train:0.1
+

@@ -1,0 +1,23 @@
+
+[34m[1mwandb[39m[22m: logging graph, to disable use `wandb.watch(log_graph=False)`
+started trainer
+Auto select gpus: [0]
+GPU available: True, used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+/media/home/alex/.miniconda/envs/acdc_gan_env/lib/python3.9/site-packages/pytorch_lightning/trainer/configuration_validator.py:131: UserWarning: You passed in a `val_dataloader` but have no `validation_step`. Skipping val loop.
+  rank_zero_warn("You passed in a `val_dataloader` but have no `validation_step`. Skipping val loop.")
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+  | Name          | Type          | Params | In sizes | Out sizes
+----------------------------------------------------------------------------
+0 | generator     | Generator     | 384 K  | [2, 150] | [2, 3, 28, 28]
+1 | discriminator | Discriminator | 44.0 K | ?        | ?
+----------------------------------------------------------------------------
+428 K     Trainable params
+0         Non-trainable params
+428 K     Total params
+1.716     Total estimated model params size (MB)
+Epoch 0:   0%|                                                                                                                                                                    | 0/210 [00:00<?, ?it/s]
+/media/home/alex/.miniconda/envs/acdc_gan_env/lib/python3.9/site-packages/pytorch_lightning/loops/optimization/optimizer_loop.py:137: UserWarning: `training_step` returned `None`. If this was on purpose, ignore this warning...
+

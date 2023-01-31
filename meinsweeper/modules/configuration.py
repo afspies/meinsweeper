@@ -1,3 +1,12 @@
+from abc import ABC
+class Configurer(ABC):
+    def __init__(self):
+    
+    def node_availability_test(self, node: Node):
+        # Can use run method.. etc. from node class
+
+        pass
+
 
 # class Configuration():
 #     def __init__(self) -> None:

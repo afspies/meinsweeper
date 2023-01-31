@@ -4,11 +4,11 @@ from setuptools import find_packages, setup
 
 setup(
     name='meinsweeper',
-    # packages=find_packages(),
+    packages=['meinsweeper'],
     python_requires = ">= 3.7",
     install_requires = [
-        "nvidia-ml-py==11.450.51", 
-        "asyncssh", 
+        "nvidia-ml-py==11.450.51",
+        "asyncssh",
         "rich",
         "psutil",
         "duecredit"

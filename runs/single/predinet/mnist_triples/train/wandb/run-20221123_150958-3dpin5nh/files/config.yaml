@@ -1,0 +1,95 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.12.15
+    framework: lightning
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    m:
+    - 1: trainer/global_step
+      6:
+      - 3
+    - 1: train/g_loss
+      5: 1
+      6:
+      - 1
+    - 1: train/d_loss
+      5: 1
+      6:
+      - 1
+    - 1: epoch
+      5: 1
+      6:
+      - 1
+    python_version: 3.9.12
+    start_time: 1669216198
+    t:
+      1:
+      - 1
+      - 9
+      - 41
+      - 50
+      - 55
+      3:
+      - 1
+      - 7
+      - 23
+      4: 3.9.12
+      5: 0.12.15
+      8:
+      - 5
+architecture:
+  desc: null
+  value:
+    input_dim:
+    - 3
+    - 28
+    - 28
+b1:
+  desc: null
+  value: 0.5
+b2:
+  desc: null
+  value: 0.999
+batch_size:
+  desc: null
+  value: 64
+channels:
+  desc: null
+  value: 3
+height:
+  desc: null
+  value: 28
+latent_dim:
+  desc: null
+  value: 150
+lr:
+  desc: null
+  value: 0.0002
+name:
+  desc: null
+  value: predinet
+rng_seed:
+  desc: null
+  value: 42
+set_size:
+  desc: null
+  value: 3
+training:
+  desc: null
+  value:
+    batch_size: 256
+    early_stop_threshold: 0.94
+    grad_clip: null
+    learning_rate: 0.0004
+    load_param_path: ''
+    noise: null
+    optimizer: adam
+    test_intervals: 10000
+    train_steps: 250000.0
+    weight_decay: null
+width:
+  desc: null
+  value: 28

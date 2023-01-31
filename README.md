@@ -17,6 +17,7 @@ pip install meinsweeper
 ```
 
 ## Usage
+### MeinSweeper consists of four components
 ### Using Provided Node-types
 ```python
 import meinsweeper
