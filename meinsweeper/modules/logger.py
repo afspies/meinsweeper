@@ -1,6 +1,7 @@
 from time import time as time_now
 from .utils import get_time_diff
 
+import logging
 from logging import Logger
 
 from rich.text import Text
@@ -21,16 +22,15 @@ log_files = {}
 
 #! -------------------------------------------------------
 
+
 #-------------------------------------------------------
 # This class will allow people to log in a fashion compliant with MeinSweeper
 # RUNS ON REMOTE
-
-
 class MSLogger():
     """Wrapper around a python logger which will take train/test 
     losses and print them in a format compatible with MeinSweeper"""
     def __init__(self):
-        self.python_logger = Logger('meinsweeper_logger', level='INFO')
+        self.python_logger = Logger('meinsweeper_logger', level='INFO')  # self._init_logger()
         self.step = {'train': 0, 'val': 0, 'test': 0}
 
     def log_loss(self, loss: float, mode: str = 'train', step: int = None):
@@ -41,6 +41,17 @@ class MSLogger():
 
         log_str = f'[[LOG_ACCURACY {mode.upper()}]] Step: {step}; Losses: {mode.capitalize()}: {loss}'
         self.python_logger.info(log_str)
+
+    # def __getstate__(self):
+    #     state = self.__dict__.copy()
+    #     state["python_logger"] = None
+    #     return state
+
+    # def __setstate__(self, d):
+    #     self.__dict__.update(d)  # I *think* this is a safe way to do it
+    #     self.python_logger = logging.getLogger(
+    #         'meinsweeper_logger'
+    #     )
 
 
 # ------------------------------------------------------

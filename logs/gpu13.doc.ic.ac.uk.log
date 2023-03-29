@@ -1,6 +1,9 @@
-start log at 1669140779.6382585
-gpu13.doc.ic.ac.uk 4 running
-gpu13.doc.ic.ac.uk 4 [[LOG_ACCURACY TRAIN]] Step: 1; Losses: Train:0.1
-
-gpu13.doc.ic.ac.uk 4 [[LOG_ACCURACY TRAIN]] Step: 2; Losses: Train:0.1
-
+start log at 1680101896.3891373
+gpu13.doc.ic.ac.uk 9 running
+gpu13.doc.ic.ac.uk 9 failed
+gpu13.doc.ic.ac.uk 47 running
+gpu13.doc.ic.ac.uk 47 failed
+gpu13.doc.ic.ac.uk 88 running
+gpu13.doc.ic.ac.uk 88 failed
+gpu13.doc.ic.ac.uk 126 running
+gpu13.doc.ic.ac.uk 126 failed

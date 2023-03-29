@@ -10,7 +10,7 @@ from .nodes import *
 MINIMUM_VRAM = 8  # in GigaBytes
 USAGE_CRITERION = 0.8  # percentage (float) or -1 => no processes other than xorg
 MAX_PROCESSES = -1  # -1 => no limit, Otherwise number of processes = min(#nodes, #tbc_runs)
-RUN_TIMEOUT = 120  # in seconds
+RUN_TIMEOUT = 5 # 120  # in seconds
 MAX_RETRIES = 3  #! removed from PQ after this - should readd after some interval
 
 
@@ -67,9 +67,6 @@ class RunManager(object):
             cmd = f"""source ~/.bashrc;
                       XLA_PYTHON_CLIENT_MEM_FRACTION=.85 {cfg}
                    """
-            # print(cmd)
-            #   conda activate relational_slots_env;
-            #   cd ./relational_slots;
 
             #! Replace with runner class
             success = await node.run(cmd, label)

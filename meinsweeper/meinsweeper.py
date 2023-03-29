@@ -15,7 +15,6 @@ SSH_TIMEOUT = 5  #seconds
 
 from itertools import product
 
-
 def run_sweep(cmd_list, targets, steps=None):
     asyncio.run(main(cmd_list, targets, steps=steps))
 

@@ -1,6 +1,9 @@
-start log at 1669140779.4235907
-ray04.doc.ic.ac.uk 2 running
-ray04.doc.ic.ac.uk 2 [[LOG_ACCURACY TRAIN]] Step: 1; Losses: Train:0.1
-
-ray04.doc.ic.ac.uk 2 [[LOG_ACCURACY TRAIN]] Step: 2; Losses: Train:0.1
-
+start log at 1680101905.6593997
+ray04.doc.ic.ac.uk 38 running
+ray04.doc.ic.ac.uk 38 failed
+ray04.doc.ic.ac.uk 76 running
+ray04.doc.ic.ac.uk 76 failed
+ray04.doc.ic.ac.uk 110 running
+ray04.doc.ic.ac.uk 110 failed
+ray04.doc.ic.ac.uk 150 running
+ray04.doc.ic.ac.uk 150 failed
