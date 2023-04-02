@@ -10,7 +10,7 @@ from .nodes import *
 MINIMUM_VRAM = 8  # in GigaBytes
 USAGE_CRITERION = 0.8  # percentage (float) or -1 => no processes other than xorg
 MAX_PROCESSES = -1  # -1 => no limit, Otherwise number of processes = min(#nodes, #tbc_runs)
-RUN_TIMEOUT = 5 # 120  # in seconds
+RUN_TIMEOUT = 240  # in seconds
 MAX_RETRIES = 3  #! removed from PQ after this - should readd after some interval
 
 
@@ -64,10 +64,9 @@ class RunManager(object):
             # NOTE should add timeout here in case of async funkiness
             cfg, label = await self.task_q.get()  # Get next task from queue
             # cfg will be of form {'param1': ..., 'param2': ..., 'param3': ...}
-            cmd = f"""source ~/.bashrc;
-                      XLA_PYTHON_CLIENT_MEM_FRACTION=.85 {cfg}
+            cmd = f"""source ~/.bashrc && {cfg}
                    """
-
+            
             #! Replace with runner class
             success = await node.run(cmd, label)
             if success:

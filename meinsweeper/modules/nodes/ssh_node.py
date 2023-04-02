@@ -5,6 +5,11 @@ from pathlib import Path
 from meinsweeper.modules.utils import timeout_iterator
 from .abstract import ComputeNode
 
+# import logging
+# import sys
+
+# logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+
 
 class SSHNode(ComputeNode):
     def __init__(self, address, username, log_q, password=None, key_path=None, timeout=5):
@@ -72,8 +77,10 @@ class SSHNode(ComputeNode):
             await asyncssh.scp(Path(__file__).parent.parent / 'check_gpu.py', (self.scp_conn, '/tmp/check_gpu.py'))
         except asyncssh.sftp.SFTPFailure:
             return None
+        # logging.debug("CHECKING GPU")
         gpus = await self.conn.run('python /tmp/check_gpu.py')
         gpus = gpus.stdout
+        # logging.debug(gpus)
         # self.scp_conn.close()
         if gpus.startswith('[[GPU INFO]]'):
             gpu_info = gpus[14:].split(']')[0]
@@ -85,6 +92,8 @@ class SSHNode(ComputeNode):
         """ 
         Should be non-blocking and return whever a signal is recieved
         """
+        # logging.debug("RUNNING COMMAND")
+        # logging.debug(command)
         # try:
         async with self.conn.create_process(command) as proc:  # stderr=asyncssh.STDOUT
             await self.log_q.put((({'status': 'running'}, 'running'), self.connection_info['address'], label))
@@ -114,9 +123,13 @@ class SSHNode(ComputeNode):
     For example:
         [[LOG_ACCURACY TRAIN]] Step: 10; Losses: Train: 0.25, Val: 0.65
     """
-
+    
     @staticmethod
     def parse_log_line(line):
+        # print line to stdout in spite of rich table
+        # logging.debug(line)
+        # logging.debug("PARSING LINE")
+
         out = None
         #! FIX this can fail if the log line is part of an error message - we will try to parse
         #! but the f-strings won't have been evaluated (meaning we can't convert {step} or {loss} to float)

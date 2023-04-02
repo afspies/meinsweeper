@@ -30,7 +30,8 @@ class MSLogger():
     """Wrapper around a python logger which will take train/test 
     losses and print them in a format compatible with MeinSweeper"""
     def __init__(self):
-        self.python_logger = Logger('meinsweeper_logger', level='INFO')  # self._init_logger()
+        self.python_logger = logging.getLogger('meinsweeper_logger')
+        self.python_logger.setLevel(logging.INFO)
         self.step = {'train': 0, 'val': 0, 'test': 0}
 
     def log_loss(self, loss: float, mode: str = 'train', step: int = None):
