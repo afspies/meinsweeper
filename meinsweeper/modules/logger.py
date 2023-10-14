@@ -1,5 +1,5 @@
 from time import time as time_now
-from .utils import get_time_diff
+from .helpers.utils import get_time_diff
 
 import logging
 from logging import Logger
@@ -11,17 +11,7 @@ from rich.table import Table
 import asyncio
 
 TABLE_REFRESH_RATE = 3  # Hz
-LOG_DIR = './logs'
-
-#! -------------------------------------------------------
-#! This is a hack
-import os
-if not os.path.exists(LOG_DIR):
-    os.mkdir(LOG_DIR)
-log_files = {}
-
-#! -------------------------------------------------------
-
+# LOG_DIR = './logs'
 
 #-------------------------------------------------------
 # This class will allow people to log in a fashion compliant with MeinSweeper
@@ -98,12 +88,12 @@ class DisplayTable():
     def update(self, progress: dict, host: str, label: str):
         progress, line = progress
 
-        #! Janky logging
-        if host not in log_files:
-            log_files[host] = open(f'logs/{host}.log', 'w', buffering=1)
-            log_files[host].write(f'start log at {time_now()}\n')
-        if host in log_files:
-            log_files[host].write(f'{host} {label} {line}\n')
+        # #! Janky logging
+        # if host not in log_files:
+        #     log_files[host] = open(f'logs/{host}.log', 'w', buffering=1)
+        #     log_files[host].write(f'start log at {time_now()}\n')
+        # if host in log_files:
+        #     log_files[host].write(f'{host} {label} {line}\n')
 
         if progress is None:
             return

@@ -9,7 +9,7 @@ class TestLocalLogger(unittest.TestCase):
     logger = MSLogger()
     # Redirect logger to another handler so we can capture outputs
     stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(logging.INFO)
+    stream_handler.setLevel(logging.ERROR)
     logger.python_logger.addHandler(stream_handler)
 
     def test_train_loss(self):
@@ -29,7 +29,6 @@ class TestLocalLogger(unittest.TestCase):
             self.logger.log_loss(0.1, mode='val')
             self.assertEqual(buf.getvalue(), '[[LOG_ACCURACY VAL]] Step: 0; Losses: Val: 0.1\n')
             self.stream_handler.flush()
-
 
 class TestLocalNode(unittest.TestCase):
     def test_node(self):

@@ -2,10 +2,8 @@ import os
 from .due import *
 import asyncio
 
-# from rich.console import Console
 from rich.live import Live
-global console
-# console = Console()
+# global console # will be set in main
 
 from .modules import RunManager, LogParser, dict_product
 
@@ -16,8 +14,10 @@ SSH_TIMEOUT = 5  #seconds
 from itertools import product
 
 def run_sweep(cmd_list, targets, steps=None):
+    # cmd_list should be a list of strings or list of tuples (str, str)
+    if isinstance(cmd_list[0], str): # no labels included
+        cmd_list = [(cmd, f'job {i}') for i,cmd in enumerate(cmd_list)]
     asyncio.run(main(cmd_list, targets, steps=steps))
-
 
 async def main(cmd_list, targets, steps=None):
     sweep_q = asyncio.Queue()  # Workers take from - All sweep cfgs are enqueued here
@@ -38,7 +38,6 @@ async def main(cmd_list, targets, steps=None):
 
         logger.complete(live)  #This could be moved into logger, but requires keeping track of pids
         logs.cancel()
-
 
 # Use duecredit (duecredit.org) to provide a citation to relevant work to
 # be cited. This does nothing, unless the user has duecredit installed,
