@@ -1,4 +1,4 @@
-logs/
+**./logs/
 *.py[co]
 .vscode
 meinsweeper.egg-info
