@@ -10,7 +10,7 @@ MeinSweeper is a light-weight framework for running experiments on arbitrary com
 ```
 
 ## Installation
-Use the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.
+Use the package manager [pip](https://pip.pypa.io/en/stable/) to install MeinSweeper.
 
 ```bash
 pip install meinsweeper
