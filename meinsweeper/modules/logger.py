@@ -11,7 +11,6 @@ from rich.table import Table
 import asyncio
 
 TABLE_REFRESH_RATE = 3  # Hz
-# LOG_DIR = './logs'
 
 #-------------------------------------------------------
 # This class will allow people to log in a fashion compliant with MeinSweeper
@@ -72,12 +71,10 @@ class LogParser():
 class DisplayTable():
     def __init__(self, name: str, table_type: str, steps=None):
         self.name = name
-        # self.table_type = table_type
         self.steps = steps
         self.table = Table(title=name)
         self.table.add_column("Progress", style="cyan", justify="right")
         self.num_runs_completed = 0
-        # self.table.add_column("Info")
         self.progress_bars = Progress(
             TextColumn("[bold blue]{task.fields[name]}: {task.percentage:.0f}%"), BarColumn(), TimeRemainingColumn(),
             TextColumn("[bold orange] Loss: {task.fields[loss_total]} Test_Acc {task.fields[test_acc]}%")
@@ -87,13 +84,6 @@ class DisplayTable():
 
     def update(self, progress: dict, host: str, label: str):
         progress, line = progress
-
-        # #! Janky logging
-        # if host not in log_files:
-        #     log_files[host] = open(f'logs/{host}.log', 'w', buffering=1)
-        #     log_files[host].write(f'start log at {time_now()}\n')
-        # if host in log_files:
-        #     log_files[host].write(f'{host} {label} {line}\n')
 
         if progress is None:
             return
