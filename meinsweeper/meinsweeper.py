@@ -1,17 +1,16 @@
-import os
-from .due import *
 import asyncio
 
 from rich.live import Live
-# global console # will be set in main
 
-from .modules import RunManager, LogParser, dict_product
+from .due import *
+
+# global console # will be set in main
+from .modules import LogParser, RunManager
 
 # Change these according to your own configuration.
 
-SSH_TIMEOUT = 5  #seconds
+SSH_TIMEOUT = 10  #seconds
 
-from itertools import product
 
 def run_sweep(cmd_list, targets, steps=None):
     # cmd_list should be a list of strings or list of tuples (str, str)

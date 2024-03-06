@@ -1,10 +1,13 @@
-import asyncssh
 import socket
 from pathlib import Path
 
+import asyncssh
+
+from meinsweeper.modules.helpers.debug_logging import init_node_logger
 from meinsweeper.modules.helpers.utils import timeout_iterator
-from meinsweeper.modules.helpers.debug_logging import global_logger, init_node_logger
+
 from .abstract import ComputeNode
+
 
 class SSHNode(ComputeNode):
     def __init__(self, address, username, log_q, password=None, key_path=None, timeout=5):
@@ -47,21 +50,23 @@ class SSHNode(ComputeNode):
             )
 
         except asyncssh.PermissionDenied as auth_err:
-            self.node_logger.warning(f"didn't conenct to {address}")
+            self.node_logger.warning(f"didn't conenct to {address} with {auth_err}")
             # raise ValueError('Authentication failed. Check user name and SSH key configuration.') from auth_err
             return False
         except asyncssh.DisconnectError as ssh_err:
-            self.node_logger.warning(f"disconnected from {address}")
+            self.node_logger.warning(f"disconnected from {address} with {ssh_err}")
             # raise ValueError("No Session") from ssh_err
-            return False
-        except OSError as err:
-            self.node_logger.warning('Got ', err, f'when connecting to {address}')
             return False
         except TimeoutError:
             self.node_logger.warning(f"timeout from {address}")
             return False
         except socket.gaierror as target_err:
-            self.node_logger.warning(f"Could not connect to {address}")
+            self.node_logger.warning(
+                f"Could not connect to {address} with {target_err}"
+            )
+            return False
+        except OSError as err:
+            self.node_logger.warning(f"Got {err} when connecting to {address}")
             return False
 
         # Check if GPU is free
@@ -100,26 +105,81 @@ class SSHNode(ComputeNode):
             self.node_logger.info(f"Running {command} on {self.connection_info['address']}")
             await self.log_q.put((({'status': 'running'}, 'running'), self.connection_info['address'], label))
 
-            async for line in timeout_iterator(proc.stdout.__aiter__(), self.RUN_TIMEOUT, 'TIMEOUT'):
-                self.node_logger.info(f"Got STDIN line {line} from {self.connection_info['address']}")
-                if line == 'TIMEOUT':
-                    self.node_logger.warning(f"Timeout on {self.connection_info['address']}")
-                    await self.log_q.put((({'status': 'failed'}, 'failed'), self.connection_info['address'], label))
-                    return False
+            try:
+                async for line in timeout_iterator(
+                    proc.stdout.__aiter__(), self.RUN_TIMEOUT, "TIMEOUT"
+                ):
+                    self.node_logger.info(
+                        f"Got STDIN line {line} from {self.connection_info['address']}"
+                    )
+                    if line == "TIMEOUT":
+                        self.node_logger.warning(
+                            f"Timeout on {self.connection_info['address']}"
+                        )
+                        await self.log_q.put(
+                            (
+                                ({"status": "failed"}, "failed"),
+                                self.connection_info["address"],
+                                label,
+                            )
+                        )
+                        return False
 
-                parsed_line = self.parse_log_line(line)
-                if parsed_line == 'FAILED':  #TODO Make this not a hack
-                    self.node_logger.warning(f"Failed (caught via parsed line) on {self.connection_info['address']}")
-                    await self.log_q.put((({'status': 'failed'}, 'failed'), self.connection_info['address'], label))
-                    return False
-                await self.log_q.put(((parsed_line, line), self.connection_info['address'], label))
+                    parsed_line = self.parse_log_line(line)
+                    if parsed_line == "FAILED":  # TODO Make this not a hack
+                        self.node_logger.warning(
+                            f"Failed (caught via parsed line) on {self.connection_info['address']}"
+                        )
+                        await self.log_q.put(
+                            (
+                                ({"status": "failed"}, "failed"),
+                                self.connection_info["address"],
+                                label,
+                            )
+                        )
+                        return False
+                    await self.log_q.put(
+                        ((parsed_line, line), self.connection_info["address"], label)
+                    )
 
-            async for err_line in proc.stderr:
-                self.node_logger.info(f"Got STDERR line {err_line} from {self.connection_info['address']}")
-                if err_line != '':
-                    self.node_logger.warning(f'got error {err_line} for label')
-                    await self.log_q.put((({'status': 'failed'}, 'failed'), self.connection_info['address'], label))
-                    return False
+                async for err_line in proc.stderr:
+                    self.node_logger.info(
+                        f"Got STDERR line {err_line} from {self.connection_info['address']}"
+                    )
+                    if err_line != "":
+                        self.node_logger.warning(f"got error {err_line} for label")
+                        await self.log_q.put(
+                            (
+                                ({"status": "failed"}, "failed"),
+                                self.connection_info["address"],
+                                label,
+                            )
+                        )
+                        return False
+            except asyncssh.misc.ConnectionLost as err:
+                self.node_logger.warning(
+                    f"Connection lost {err} on {self.connection_info['address']}"
+                )
+                self.log_q.put(
+                    (
+                        ({"status": "failed"}, "failed"),
+                        self.connection_info["address"],
+                        label,
+                    )
+                )
+                return False
+            except Exception as err:
+                self.node_logger.warning(
+                    f'Got {err} on {self.connection_info["address"]}'
+                )
+                self.log_q.put(
+                    (
+                        ({"status": "failed"}, "failed"),
+                        self.connection_info["address"],
+                        label,
+                    )
+                )
+                return False
         return True
 
     """

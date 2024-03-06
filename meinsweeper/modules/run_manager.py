@@ -13,7 +13,7 @@ import textwrap
 MINIMUM_VRAM = 8  # in GigaBytes
 USAGE_CRITERION = 0.8  # percentage (float) or -1 => no processes other than xorg
 MAX_PROCESSES = -1  # -1 => no limit, Otherwise number of processes = min(#nodes, #tbc_runs)
-RUN_TIMEOUT = 10# 240  # in seconds
+RUN_TIMEOUT = 600 #240  # in seconds
 MAX_RETRIES = 3  #! removed from PQ after this - should readd after some interval
 
 class RunManager(object):

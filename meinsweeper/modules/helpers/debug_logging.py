@@ -1,8 +1,9 @@
 import logging
+import os
 from pathlib import Path
 
-LOGGING_ENABLED = True
-LOG_DIR = Path('./logs')
+LOG_DIR = Path(os.getenv("MEINSWEEPER_LOG_DIR", "./logs"))
+LOGGING_ENABLED = os.getenv("MEINSWEEPER_LOGGING_ENABLED", "True").lower() == "true"
 
 if LOGGING_ENABLED:
     # make sure the log, and log/nodes directories exist
@@ -19,11 +20,11 @@ class SilentFilter(logging.Filter):
         return self.is_enabled
 
 # Create a custom filter instance
-log_filter = SilentFilter(LOGGING_ENABLED)
+log_filter = SilentFilter(is_enabled=not LOGGING_ENABLED)
 
 # -- Configure General Logging --
 # Configure the logger
-global_logger = logging.getLogger(f'Run Manager')
+global_logger = logging.getLogger("Run Manager")
 global_logger.setLevel(logging.INFO)
 
 # Create a FileHandler to append logs to a shared log file

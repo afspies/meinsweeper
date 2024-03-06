@@ -113,6 +113,9 @@ class DisplayTable():
     def add(self, host: str, label: str):
         #! Representation should be generated elsewhere
         #! Also, need to handle stages
+        # truncate label to 30 characters
+        if len(label) > 30:
+            label = label[:30] + (label[30:] and "...")
         pid = self.progress_bars.add_task(
             "", name=host.split('.')[0] + f' {label}', total=self.steps if self.steps else 100000
         )
