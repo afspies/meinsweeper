@@ -12,15 +12,16 @@ if LOGGING_ENABLED:
 
 # A lazy way to disable all loggers without needing to check each logging call
 class SilentFilter(logging.Filter):
-    def __init__(self, is_enabled=True):
-        self.is_enabled = is_enabled
+    def __init__(self, logging_enabled=True):
+        self.logging_enabled = logging_enabled
 
     def filter(self, record):
         # If the global flag is set to False, suppress the log record
-        return self.is_enabled
+        return self.logging_enabled  # True => Will be logged
+
 
 # Create a custom filter instance
-log_filter = SilentFilter(is_enabled=not LOGGING_ENABLED)
+log_filter = SilentFilter(logging_enabled=LOGGING_ENABLED)
 
 # -- Configure General Logging --
 # Configure the logger
