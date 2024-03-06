@@ -210,7 +210,7 @@ class SSHNode(ComputeNode):
                     loss_terms = section.split('Losses:')[1].split(',')
                     for loss_term in loss_terms:
                         loss_name, loss_value = map(lambda x: x.strip(), loss_term.split(':'))
-                        out[f'loss_{loss_name}'] = float(loss_value)
+                        out[f'loss_total'] = float(loss_value)
                 elif 'Step' in section:
                     out['completed'] = int(section.split('Step:')[1])
         elif '[[LOG_ACCURACY TEST]]' in line:  #TODO something is broken here

@@ -9,6 +9,9 @@ if LOGGING_ENABLED:
     # make sure the log, and log/nodes directories exist
     LOG_DIR.mkdir(exist_ok=True)
     (LOG_DIR/'nodes').mkdir(exist_ok=True)
+else:
+    print("FYI Meinsweeper Logging is disabled")
+
 
 # A lazy way to disable all loggers without needing to check each logging call
 class SilentFilter(logging.Filter):
@@ -28,14 +31,23 @@ log_filter = SilentFilter(logging_enabled=LOGGING_ENABLED)
 global_logger = logging.getLogger("Run Manager")
 global_logger.setLevel(logging.INFO)
 
-# Create a FileHandler to append logs to a shared log file
-file_handler = logging.FileHandler(LOG_DIR/'run.log')
-file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(funcName)s - %(message)s'))
+if LOGGING_ENABLED:
+    # Create a FileHandler to append logs to a shared log file
+    file_handler = logging.handlers.RotatingFileHandler(
+        LOG_DIR / "run.log",  # Path to the log file
+        maxBytes=50 * 1024 * 1024,  # Maximum log file size (50MB)
+        backupCount=2,  # Keep at most 2 log files
+    )
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s - %(message)s"
+        )
+    )
 
-# Add the FileHandler to the central logger
-# global_logger = logging.getLogger('Run Manager')
-global_logger.addHandler(file_handler)
+    # Add the FileHandler to the central logger
+    # global_logger = logging.getLogger('Run Manager')
+    global_logger.addHandler(file_handler)
 global_logger.addFilter(log_filter)
 
 
@@ -49,19 +61,28 @@ def log_function_call(func):
 
 # -- Functions to initialize node-specific logs -- 
 def init_node_logger(node_name):
-    # Create a unique log file for each thread
-    log_filename = f'node_{node_name}.log'
-
     # Configure the thread-specific logger
     node_logger = logging.getLogger(f'node_{node_name}')
     node_logger.setLevel(logging.INFO)
 
-    # Create a FileHandler for the thread's log file
-    file_handler = logging.FileHandler(LOG_DIR/'nodes'/log_filename)
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(funcName)s - %(message)s'))
+    if LOGGING_ENABLED:
+        # Create a unique log file for each thread
+        log_filename = f"node_{node_name}.log"
 
-    # Add the FileHandler to the thread-specific logger
-    node_logger.addHandler(file_handler)
+        # Create a FileHandler for the thread's log file
+        file_handler = logging.handlers.RotatingFileHandler(
+            LOG_DIR / "nodes" / log_filename,  # Path to the log file
+            maxBytes=25 * 1024 * 1024,  # Maximum log file size (25MB)
+            backupCount=2,  # Keep at most 2 log files
+        )
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s - %(message)s"
+            )
+        )
+
+        # Add the FileHandler to the thread-specific logger
+        node_logger.addHandler(file_handler)
     node_logger.addFilter(log_filter)
     return node_logger

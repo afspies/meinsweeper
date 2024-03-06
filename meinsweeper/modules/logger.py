@@ -76,14 +76,20 @@ class DisplayTable():
         self.table.add_column("Progress", style="cyan", justify="right")
         self.num_runs_completed = 0
         self.progress_bars = Progress(
-            TextColumn("[bold blue]{task.fields[name]}: {task.percentage:.0f}%"), BarColumn(), TimeRemainingColumn(),
-            TextColumn("[bold orange] Loss: {task.fields[loss_total]} Test_Acc {task.fields[test_acc]}%")
+            TextColumn("[bold blue]{task.fields[name]}: {task.percentage:.0f}%"),
+            BarColumn(),
+            TimeRemainingColumn(),
+            TextColumn(
+                "[bold orange] Loss: {task.fields[loss_total]:.2e} Test_Acc {task.fields[test_acc]:.2e}"
+            ),
         )
         self.table.add_row(Panel.fit(self.progress_bars, title=name, border_style="green", padding=(1, 1)))
         self.host_map = {}
 
     def update(self, progress: dict, host: str, label: str):
-        progress, line = progress
+        progress, line = (
+            progress  # progress is parsed line (i.e. losses or status) and line is raw
+        )
 
         if progress is None:
             return
