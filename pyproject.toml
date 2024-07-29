@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meinsweeper"
-version = "0.1.02"  
+version = "0.1.03"  
 description = "MeinSweeper is a light-weight framework for running experiments on arbitrary compute nodes"
 readme = "README.md"
 authors = [{name = "Alex Spies", email = "alex@afspies.com"}]
@@ -25,7 +25,7 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/afspies/meinsweeper"
 "Bug Tracker" = "https://github.com/afspies/meinsweeper/issues"
-"Icon" = "https://pypi.org/static/images/project/{project_name}/logo.png"
+"Icon" = "https://raw.githubusercontent.com/afspies/meinsweeper/master/meinsweeper/logo.png"
 
 [tool.setuptools]
 packages = ["meinsweeper"]
