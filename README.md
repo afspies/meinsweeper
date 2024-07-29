@@ -1,5 +1,5 @@
 # MeinSweeper
-<img src="logo.png" align="right"
+<img src="meinsweeper/logo.png" align="right"
      alt="Minesweeper image taken from https://www.pngwing.com/en/free-png-vxhwi" width="80" height="80">
 
 MeinSweeper is a light-weight framework for running experiments on arbitrary compute nodes
