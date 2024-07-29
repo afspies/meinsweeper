@@ -70,6 +70,8 @@ def init_node_logger(node_name):
         log_filename = f"node_{node_name}.log"
 
         # Create a FileHandler for the thread's log file
+        #! Add logic to keep log files corresponding to crashed runs and move them into
+        #! A special folder
         file_handler = logging.handlers.RotatingFileHandler(
             LOG_DIR / "nodes" / log_filename,  # Path to the log file
             maxBytes=25 * 1024 * 1024,  # Maximum log file size (25MB)

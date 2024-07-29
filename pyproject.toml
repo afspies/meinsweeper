@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meinsweeper"
+version = "0.1.0"  # Update this with your version number
+description = "MeinSweeper is a light-weight framework for running experiments on arbitrary compute nodes"
+readme = "README.md"
+authors = [{name = "Alex Spies", email = "alex@afspies.com"}]
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.7"
+dependencies = [
+    "asyncssh",
+    "rich",
+    "psutil",
+    "duecredit"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/afspies/meinsweeper"
+"Bug Tracker" = "https://github.com/afspies/meinsweeper/issues"
+
+[tool.setuptools]
+packages = ["meinsweeper"]
+
+[tool.setuptools.dynamic]
+readme = {file = ["README.md"], content-type = "text/markdown"}

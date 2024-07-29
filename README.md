@@ -31,7 +31,7 @@ meinsweeper.run(cfg)
 ### With Custom Nodes
 #### Subclass and existing node
 Override the initialization, running or logging behaviour of an existing node type.
-If you would like to establish a generic, and robust, communication class which systematically utilizes STDOUT, that would be nice ;).
+If you would like to establish a generic, and robust, communication class which systematically utilizes STDOUT, that would be nice!.
 
 #### Create a node class
 ```python
