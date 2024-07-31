@@ -22,7 +22,7 @@ pip install meinsweeper
 ```python
 import meinsweeper
 
-cfg = {'target': 'ssh', ...}
+cfg = {'target': 'ssh', ...} 
 
 meinsweeper.run(cfg)
 ```

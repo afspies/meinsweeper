@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import socket
 import asyncio
+import os
 import asyncssh
 from pathlib import Path
 import logging
@@ -10,11 +11,12 @@ from meinsweeper.modules.helpers.debug_logging import global_logger
 from .nodes import *
 import textwrap
 
-MINIMUM_VRAM = 8  # in GigaBytes
-USAGE_CRITERION = 0.8  # percentage (float) or -1 => no processes other than xorg
-MAX_PROCESSES = -1  # -1 => no limit, Otherwise number of processes = min(#nodes, #tbc_runs)
-RUN_TIMEOUT = 600 #240  # in seconds
-MAX_RETRIES = 3  #! removed from PQ after this - should readd after some interval
+# Use environment variables with default values
+MINIMUM_VRAM = int(os.environ.get('MINIMUM_VRAM', 8))  # in GigaBytes
+USAGE_CRITERION = float(os.environ.get('USAGE_CRITERION', 0.8))  # percentage (float) or -1 => no processes other than xorg
+MAX_PROCESSES = int(os.environ.get('MAX_PROCESSES', -1))  # -1 => no limit, Otherwise number of processes = min(#nodes, #tbc_runs)
+RUN_TIMEOUT = int(os.environ.get('RUN_TIMEOUT', 600))  # in seconds
+MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 3))  #! removed from PQ after this - should readd after some interval
 
 class RunManager(object):
     """ The RunManager spawns processes on the target nodes from the pool of available ones
@@ -99,7 +101,7 @@ class Target(object):
     
     TODO Extend to include other attributes like vram, etc. for ranking 
     """
-    def __init__(self, target, retries=3) -> None:
+    def __init__(self, target, retries=MAX_RETRIES) -> None:
         self.details = target
         self.retries = retries
 
