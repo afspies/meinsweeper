@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meinsweeper"
-version = "0.1.03"  
+version = "0.1.04"  
 description = "MeinSweeper is a light-weight framework for running experiments on arbitrary compute nodes"
 readme = "README.md"
 authors = [{name = "Alex Spies", email = "alex@afspies.com"}]
