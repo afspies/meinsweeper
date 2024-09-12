@@ -1,6 +1,10 @@
 import logging
 import os
+import shutil
 from pathlib import Path
+
+# Add this near the top of the file
+DEBUG = os.getenv('MEINSWEEPER_DEBUG', 'False').lower() == 'true'
 
 LOG_DIR = Path(os.getenv("MEINSWEEPER_LOG_DIR", "./logs"))
 LOGGING_ENABLED = os.getenv("MEINSWEEPER_LOGGING_ENABLED", "True").lower() == "true"
@@ -60,14 +64,13 @@ def log_function_call(func):
     return wrapper
 
 # -- Functions to initialize node-specific logs -- 
-def init_node_logger(node_name):
-    # Configure the thread-specific logger
-    node_logger = logging.getLogger(f'node_{node_name}')
-    node_logger.setLevel(logging.INFO)
-
+def init_node_logger(name):
+    logger = logging.getLogger(f'node_{name}')
+    logger.setLevel(logging.DEBUG if DEBUG else logging.INFO)
+    
     if LOGGING_ENABLED:
         # Create a unique log file for each thread
-        log_filename = f"node_{node_name}.log"
+        log_filename = f"node_{name}.log"
 
         # Create a FileHandler for the thread's log file
         #! Add logic to keep log files corresponding to crashed runs and move them into
@@ -85,6 +88,22 @@ def init_node_logger(node_name):
         )
 
         # Add the FileHandler to the thread-specific logger
-        node_logger.addHandler(file_handler)
-    node_logger.addFilter(log_filter)
-    return node_logger
+        logger.addHandler(file_handler)  # Changed from node_logger to logger
+    logger.addFilter(log_filter)  # Changed from node_logger to logger
+    return logger
+
+def clear_log_files():
+    if LOGGING_ENABLED:
+        # Clear the main log file
+        with open(LOG_DIR / "run.log", 'w') as f:
+            f.write('')  # This will clear the file
+        
+        # Clear all node log files
+        node_log_dir = LOG_DIR / "nodes"
+        for file in node_log_dir.glob('*.log'):
+            with open(file, 'w') as f:
+                f.write('')  # This will clear each file
+
+        print("All log files have been cleared.")
+    else:
+        print("Logging is disabled. No files to clear.")

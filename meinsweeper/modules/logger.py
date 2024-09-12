@@ -19,8 +19,6 @@ class MSLogger():
     """Wrapper around a python logger which will take train/test 
     losses and print them in a format compatible with MeinSweeper"""
     def __init__(self):
-        self.python_logger = logging.getLogger('meinsweeper_logger')
-        self.python_logger.setLevel(logging.INFO)
         self.step = {'train': 0, 'val': 0, 'test': 0}
 
     def log_loss(self, loss: float, mode: str = 'train', step: int = None):
@@ -30,7 +28,7 @@ class MSLogger():
             self.step[mode] += 1
 
         log_str = f'[[LOG_ACCURACY {mode.upper()}]] Step: {step}; Losses: {mode.capitalize()}: {loss}'
-        self.python_logger.info(log_str)
+        print(log_str, flush=True)
 
     # def __getstate__(self):
     #     state = self.__dict__.copy()
@@ -48,17 +46,21 @@ class MSLogger():
 # This class will display logging info in a rich table
 # RUNS ON HOST
 class LogParser():
-    def __init__(self, log_q: asyncio.PriorityQueue, steps: int = None) -> None:
+    def __init__(self, log_q: asyncio.Queue, steps: int = None) -> None:
         self.log_q = log_q
         self.table = DisplayTable('Training Progress', 'Info', steps=steps)
         self.display = self.table.table
-        # can't get procs from table to count, as this includes failed runs
         self.start_time = time_now()
 
     async def start_logger(self):
         while True:
-            i, addr, label = await self.log_q.get()
-            self.table.update(i, addr, label)
+            msg = await self.log_q.get()
+            if isinstance(msg, tuple) and len(msg) == 3:
+                content, addr, label = msg
+                if isinstance(content, str) and '[[LOG_ACCURACY' in content:
+                    # This is an MSLogger output, log it
+                    logging.getLogger('MSLogger').info(f"{addr} - {label}: {content}")
+                self.table.update(content, addr, label)
             self.log_q.task_done()
 
     def complete(self, live_session):
@@ -66,8 +68,6 @@ class LogParser():
         msg = f"🚀 Done! Completed {self.table.num_runs_completed} runs in {time_elapsed} 🚀"
         live_session.update(Panel(Text(msg, style="bold magenta", justify="center")))
 
-
-# ------------------------------------------------------
 class DisplayTable():
     def __init__(self, name: str, table_type: str, steps=None):
         self.name = name
@@ -80,50 +80,61 @@ class DisplayTable():
             BarColumn(),
             TimeRemainingColumn(),
             TextColumn(
-                "[bold orange] Loss: {task.fields[loss_total]:.2e} Test_Acc {task.fields[test_acc]:.2e}"
+                "[bold orange] Loss: {task.fields[loss_total]:.2e}"
             ),
         )
         self.table.add_row(Panel.fit(self.progress_bars, title=name, border_style="green", padding=(1, 1)))
         self.host_map = {}
+        self.completed_tasks = set()
+        self.job_pids = {}  # New dictionary to keep track of job PIDs
 
-    def update(self, progress: dict, host: str, label: str):
-        progress, line = (
-            progress  # progress is parsed line (i.e. losses or status) and line is raw
-        )
+    def update(self, content, host: str, label: str):
+        if isinstance(content, dict):
+            progress = content
+        elif isinstance(content, str):
+            progress = self.parse_log_line(content)
+        else:
+            return
 
         if progress is None:
             return
-        progress['raw'] = str(progress)
 
-        if host not in self.host_map:
+        job_key = f"{host}_{label}"
+        if job_key not in self.job_pids:
             host_pid = self.add(host, label)
-            progress['completed'] = 0
-            progress['loss_total'] = 0
-            progress['test_acc'] = 0
-            self.progress_bars.update(host_pid, **progress)
+            self.job_pids[job_key] = host_pid
         else:
-            host_pid = self.host_map[host]
-            failed = progress.get('status', '') == 'failed'
-            if not failed:
-                self.progress_bars.update(host_pid, **progress)
-            else:
-                self.progress_bars.update(host_pid, total=1, completed=1)
+            host_pid = self.job_pids[job_key]
 
-            if self.progress_bars.tasks[host_pid].finished:
-                if not failed:
-                    self.num_runs_completed += 1
-                self.progress_bars.update(host_pid, visible=False)
-                # self.progress_bars.tasks[host_pid].visible = False # self.progress_bars.remove_task(host_pid) #! doesn't work properly for some reason... (even if cleaning up pids)
-                del self.host_map[host]
+        progress['completed'] = progress.get('completed', 0)
+        progress['loss_total'] = progress.get('loss_total', 0)
+        
+        failed = progress.get('status', '') == 'failed'
+        if not failed:
+            self.progress_bars.update(host_pid, **progress)
+
+        if progress.get('completed', 0) >= (self.steps or 100) or 'Job completed' in str(content):
+            if host_pid not in self.completed_tasks:
+                self.num_runs_completed += 1
+                self.completed_tasks.add(host_pid)
+            self.progress_bars.update(host_pid, completed=self.steps or 100, visible=False)
+
+    @staticmethod
+    def parse_log_line(line):
+        if '[[LOG_ACCURACY' in line:
+            mode = line.split('[[LOG_ACCURACY')[1].split(']]')[0].strip()
+            parts = line.split(';')
+            step = int(parts[0].split(':')[1].strip())
+            loss = float(parts[1].split(':')[2].strip())
+            return {'completed': step, 'loss_total': loss, 'mode': mode}
+        return None
 
     def add(self, host: str, label: str):
-        #! Representation should be generated elsewhere
-        #! Also, need to handle stages
-        # truncate label to 30 characters
         if len(label) > 30:
             label = label[:30] + (label[30:] and "...")
         pid = self.progress_bars.add_task(
-            "", name=host.split('.')[0] + f' {label}', total=self.steps if self.steps else 100000
+            "", name=host.split('.')[0] + f' {label}', total=self.steps if self.steps else 100000,
+            completed=0, loss_total=0
         )
         self.host_map[host] = pid
         return pid
@@ -133,3 +144,6 @@ class DisplayTable():
 
     def __str__(self):
         return str(self.table)
+
+    def is_complete(self):
+        return len(self.completed_tasks) == len(self.progress_bars.tasks)
