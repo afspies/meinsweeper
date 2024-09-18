@@ -2,6 +2,8 @@ import logging
 import os
 import shutil
 from pathlib import Path
+import queue
+import threading
 
 # Add this near the top of the file
 DEBUG = os.getenv('MEINSWEEPER_DEBUG', 'False').lower() == 'true'
@@ -64,32 +66,49 @@ def log_function_call(func):
     return wrapper
 
 # -- Functions to initialize node-specific logs -- 
+class QueueHandler(logging.Handler):
+    def __init__(self, log_queue):
+        super().__init__()
+        self.log_queue = log_queue
+
+    def emit(self, record):
+        self.log_queue.put(record)
+
+def log_worker(log_queue, file_handler):
+    while True:
+        record = log_queue.get()
+        if record is None:
+            break
+        file_handler.emit(record)
+
+_node_loggers = {}
+
 def init_node_logger(name):
+    if name in _node_loggers:
+        return _node_loggers[name]
+
     logger = logging.getLogger(f'node_{name}')
-    logger.setLevel(logging.DEBUG if DEBUG else logging.INFO)
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False  # Prevent logs from propagating to the root logger
     
     if LOGGING_ENABLED:
-        # Create a unique log file for each thread
         log_filename = f"node_{name}.log"
-
-        # Create a FileHandler for the thread's log file
-        #! Add logic to keep log files corresponding to crashed runs and move them into
-        #! A special folder
         file_handler = logging.handlers.RotatingFileHandler(
-            LOG_DIR / "nodes" / log_filename,  # Path to the log file
-            maxBytes=25 * 1024 * 1024,  # Maximum log file size (25MB)
-            backupCount=2,  # Keep at most 2 log files
+            LOG_DIR / "nodes" / log_filename,
+            maxBytes=25 * 1024 * 1024,
+            backupCount=2,
         )
-        file_handler.setLevel(logging.INFO)
+        file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(
             logging.Formatter(
                 "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s - %(message)s"
             )
         )
 
-        # Add the FileHandler to the thread-specific logger
-        logger.addHandler(file_handler)  # Changed from node_logger to logger
-    logger.addFilter(log_filter)  # Changed from node_logger to logger
+        logger.addHandler(file_handler)
+
+    logger.addFilter(log_filter)
+    _node_loggers[name] = logger
     return logger
 
 def clear_log_files():

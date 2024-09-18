@@ -3,128 +3,180 @@ import os
 import subprocess
 from pathlib import Path
 import tempfile
+import shlex
+import threading
 import sys
-from io import StringIO
 
 from meinsweeper.modules.helpers.debug_logging import init_node_logger, DEBUG
 from meinsweeper.modules.helpers.utils import timeout_iterator
 from .abstract import ComputeNode
 
-class CaptureIO(StringIO):
-    def __init__(self, node, label, log_q):
-        super().__init__()
-        self.node = node
-        self.label = label
-        self.log_q = log_q
-
-    def write(self, s):
-        super().write(s)
-        if s.strip():
-            self.node.node_logger.debug(f"Job {self.label} output: {s.strip()}")
-            asyncio.create_task(self.log_q.put((s.strip(), self.node.name, self.label)))
+# Use environment variables with default values
+MINIMUM_VRAM = int(os.environ.get('MINIMUM_VRAM', 10)) * 1024  # Convert GB to MB
+USAGE_CRITERION = float(os.environ.get('USAGE_CRITERION', 0.1))
 
 class LocalAsyncNode(ComputeNode):
-    def __init__(self, log_q, available_gpus, timeout=1200):
-        self.log_q = log_q
-        self.name = 'local-async'
-        self.available_gpus = available_gpus
-        self.RUN_TIMEOUT = timeout
-        self.node_logger = init_node_logger(self.name)
-        self.temp_dirs = {}
+    _instances = {}
+    _lock = threading.Lock()
+
+    def __new__(cls, node_name, log_q, available_gpus, timeout=1200):
+        with cls._lock:
+            if node_name not in cls._instances:
+                instance = super().__new__(cls)
+                cls._instances[node_name] = instance
+                instance.initialized = False
+            return cls._instances[node_name]
+
+    def __init__(self, node_name, log_q, available_gpus, timeout=1200):
+        if not hasattr(self, 'initialized') or not self.initialized:
+            self.log_q = log_q
+            self.name = node_name
+            self.available_gpus = available_gpus
+            self.RUN_TIMEOUT = timeout
+            self.node_logger = init_node_logger(self.name)
+            self.temp_dirs = {}
+            self.log_lock = threading.Lock()
+            self.free_gpus = []
+            self.initialized = True
+            self.log_info("INIT", f"LocalAsyncNode initialized with name: {self.name}, available GPUs: {self.available_gpus}")
+        elif self.name != node_name or self.available_gpus != available_gpus:
+            # If the instance exists but with different parameters, update it
+            self.name = node_name
+            self.available_gpus = available_gpus
+            self.RUN_TIMEOUT = timeout
+            self.node_logger = init_node_logger(self.name)
+            self.log_info("REINIT", f"LocalAsyncNode reinitialized with name: {self.name}, available GPUs: {self.available_gpus}")
+
+    def log_info(self, label, message):
+        with self.log_lock:
+            self.node_logger.info(f"{self.name} | {label} | {message}")
+
+    def log_error(self, label, message):
+        with self.log_lock:
+            self.node_logger.error(f"{self.name} | {label} | {message}")
+
+    def log_warning(self, label, message):
+        with self.log_lock:
+            self.node_logger.warning(f"{self.name} | {label} | {message}")
+
+    def log_debug(self, label, message):
+        with self.log_lock:
+            self.node_logger.debug(f"{self.name} | {label} | {message}")
 
     async def open_connection(self):
-        self.node_logger.info("Initializing LocalAsyncNode")
+        self.log_info("INIT", f"Initializing LocalAsyncNode {self.name}")
+        self.log_debug("INIT", f"Available GPUs for {self.name}: {self.available_gpus}")
         self.free_gpus = await self.check_gpu_free()
-        self.node_logger.debug(f"Free GPUs: {self.free_gpus}")
-        return True if self.free_gpus else False
+        self.log_debug("INIT", f"Free GPUs for {self.name}: {self.free_gpus}")
+        return bool(self.free_gpus)
 
     async def check_gpu_free(self):
-        self.node_logger.info("Checking available GPUs")
+        self.log_info("GPU_CHECK", "Checking available GPUs")
         try:
-            result = subprocess.run(['nvidia-smi', '--query-gpu=index,memory.free', '--format=csv,noheader,nounits'], 
+            result = subprocess.run(['nvidia-smi', '--query-gpu=index,memory.total,memory.free,utilization.gpu', '--format=csv,noheader,nounits'], 
                                     capture_output=True, text=True, check=True)
             gpu_info = result.stdout.strip().split('\n')
-            self.node_logger.debug(f"GPU info: {gpu_info}")
-            free_gpus = [gpu.split(',')[0] for gpu in gpu_info if int(gpu.split(',')[1]) > 1000]  # Consider GPUs with >1GB free memory
-            self.node_logger.debug(f"Free GPUs before filtering: {free_gpus}")
-            return [gpu for gpu in free_gpus if gpu in self.available_gpus]
+            self.log_debug("GPU_CHECK", f"GPU info: {gpu_info}")
+            free_gpus = []
+            for gpu in gpu_info:
+                index, total_memory, free_memory, gpu_util = map(int, gpu.split(','))
+                if (str(index) in self.available_gpus and
+                    free_memory >= MINIMUM_VRAM and
+                    gpu_util <= USAGE_CRITERION * 100):  # Convert USAGE_CRITERION to percentage
+                    free_gpus.append(str(index))
+            self.log_debug("GPU_CHECK", f"Free GPUs after filtering: {free_gpus}")
+            return free_gpus
         except subprocess.CalledProcessError as e:
-            self.node_logger.warning(f"Failed to get GPU information: {e}")
-            return None
+            self.log_warning("GPU_CHECK", f"Failed to get GPU information: {e}")
+            return []
 
     async def run(self, command, label):
+        self.log_info(label, f"Attempting to run job on {self.name}. Available GPUs: {self.available_gpus}, Free GPUs: {self.free_gpus}")
         if not self.free_gpus:
-            self.node_logger.warning("No free GPUs available")
+            self.log_warning(label, f"No free GPUs available on {self.name}")
             return False
 
         gpu_to_use = self.free_gpus.pop(0)
+        self.log_info(label, f"Selected GPU {gpu_to_use} for job on {self.name}")
         temp_dir = tempfile.mkdtemp(prefix=f"meinsweeper_job_{label}_")
         self.temp_dirs[label] = temp_dir
 
         env = os.environ.copy()
         env['CUDA_VISIBLE_DEVICES'] = gpu_to_use
 
-        self.node_logger.info(f"Running command on local GPU {gpu_to_use}")
+        self.log_info(label, f"Running command on {self.name} GPU {gpu_to_use} (CUDA_VISIBLE_DEVICES={gpu_to_use})")
         await self.log_q.put((({'status': 'running'}, 'running'), self.name, label))
 
-        # Write the command to a temporary Python file
+        # Modify the command to print the actual GPU being used
+        modified_command = f"""
+import torch
+import os
+print(f"Actual GPU being used: {{torch.cuda.current_device()}}")
+print(f"Number of available GPUs: {{torch.cuda.device_count()}}")
+print(f"CUDA_VISIBLE_DEVICES: {{os.environ.get('CUDA_VISIBLE_DEVICES', 'Not set')}}")
+"""
+
+        # Write the modified command to a temporary Python script
         script_path = Path(temp_dir) / f"{label}_script.py"
         with open(script_path, 'w') as f:
-            f.write(command)
+            f.write(modified_command)
+
+        # Construct the full command
+        full_command = f"{sys.executable} {script_path} && {command}"
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                sys.executable, str(script_path),
+            process = await asyncio.create_subprocess_shell(
+                full_command,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,  # Redirect stderr to stdout
+                stderr=asyncio.subprocess.PIPE,
                 env=env,
-                cwd=temp_dir
+                cwd=Path.cwd()  # Use the current working directory
             )
 
-            async def read_stream(stream):
+            async def read_stream(stream, is_stderr=False):
                 while True:
                     line = await stream.readline()
                     if not line:
                         break
                     line = line.decode().strip()
-                    self.node_logger.info(f"Job {label} output: {line}")
-                    
-                    # Explicitly log MSLogger outputs
-                    if '[[LOG_ACCURACY' in line:
-                        self.node_logger.info(f"MSLogger output: {line}")
-                    
-                    await self.log_q.put((line, self.name, label))
+                    if line:  # Only process non-empty lines
+                        if is_stderr:
+                            self.log_error(label, f"{self.name} stderr: {line}")
+                            await self.log_q.put((f"ERROR: {line}", self.name, label))
+                        else:
+                            self.log_info(label, f"{self.name} stdout: {line}")
+                            await self.log_q.put((line, self.name, label))
 
-            # Read only stdout (which now includes stderr)
-            await read_stream(process.stdout)
+            # Read both stdout and stderr
+            await asyncio.gather(
+                read_stream(process.stdout),
+                read_stream(process.stderr, is_stderr=True)
+            )
 
             return_code = await process.wait()
             if return_code != 0:
-                self.node_logger.warning(f"Job {label} failed with return code {return_code}")
-                await self.log_q.put(({"status": "failed"}, self.name, label))
+                self.log_warning(label, f"Job failed with return code {return_code} on {self.name}")
+                await self.log_q.put(({"status": "failed", "return_code": return_code}, self.name, label))
                 return False
 
         except Exception as e:
-            self.node_logger.error(f"Error running job {label}: {str(e)}")
-            await self.log_q.put(({"status": "failed"}, self.name, label))
+            self.log_error(label, f"Error running job on {self.name}: {str(e)}")
+            import traceback
+            tb = traceback.format_exc()
+            await self.log_q.put(({"status": "failed", "error": str(e), "traceback": tb}, self.name, label))
             return False
 
         finally:
             self.free_gpus.append(gpu_to_use)
+            self.log_info(label, f"Job completed on {self.name}. GPU {gpu_to_use} returned to free_gpus. Current free_gpus: {self.free_gpus}")
 
-        self.node_logger.info(f"Job {label} completed successfully")
+        self.log_info(label, f"Job completed successfully on {self.name}")
+        await self.log_q.put(({"status": "completed"}, self.name, label))
         return True
 
     @staticmethod
     def parse_log_line(line):
-        # We'll keep this method for internal use, but we're not using its output for the log queue anymore
-        # print line to stdout in spite of rich table
-        # logging.debug(line)
-        # logging.debug("PARSING LINE")
-
         out = None
-        #! FIX this can fail if the log line is part of an error message - we will try to parse
-        #! but the f-strings won't have been evaluated (meaning we can't convert {step} or {loss} to float)
         if '[[LOG_ACCURACY TRAIN]]' in line:
             out = {}
             line = line.split('[[LOG_ACCURACY TRAIN]]')[1]
@@ -139,7 +191,7 @@ class LocalAsyncNode(ComputeNode):
                         out[f'loss_total'] = float(loss_value)
                 elif 'Step' in section:
                     out['completed'] = int(section.split('Step:')[1])
-        elif '[[LOG_ACCURACY TEST]]' in line:  #TODO something is broken here
+        elif '[[LOG_ACCURACY TEST]]' in line:
             line = line.split(':')[1]
             out = {'test_acc': float(line.strip())}
         elif 'error' in line or 'RuntimeError' in line or 'failed' in line or 'Killed' in line:

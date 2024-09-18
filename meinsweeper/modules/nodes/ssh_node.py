@@ -1,34 +1,74 @@
 import socket
 from pathlib import Path
-
+import asyncio
 import asyncssh
+import threading
+import os
 
 from meinsweeper.modules.helpers.debug_logging import init_node_logger
 from meinsweeper.modules.helpers.utils import timeout_iterator
-
 from .abstract import ComputeNode
 
+# Use environment variables with default values
+MINIMUM_VRAM = int(os.environ.get('MINIMUM_VRAM', 10)) * 1024  # Convert GB to MB
+USAGE_CRITERION = float(os.environ.get('USAGE_CRITERION', 0.1))
 
 class SSHNode(ComputeNode):
-    def __init__(self, address, username, log_q, password=None, key_path=None, timeout=5):
-        assert password or key_path, "Either password or key_path must be provided."
-        self.log_q = log_q
-        self.name = f'ssh-{address}'
-        self.connection_info = {
-            'address': address,
-            'username': username,
-            'password': password,
-            'key_path': key_path,
-            'timeout': timeout
-        }
-        self.RUN_TIMEOUT = timeout
-        self.node_logger = init_node_logger(self.name)
+    _instances = {}
+    _lock = threading.Lock()
+
+    def __new__(cls, node_name, log_q, address, username, password=None, key_path=None, timeout=5):
+        with cls._lock:
+            if node_name not in cls._instances:
+                instance = super().__new__(cls)
+                cls._instances[node_name] = instance
+                instance.initialized = False
+            return cls._instances[node_name]
+
+    def __init__(self, node_name, log_q, address, username, password=None, key_path=None, timeout=5):
+        if not hasattr(self, 'initialized') or not self.initialized:
+            assert password or key_path, "Either password or key_path must be provided."
+            self.log_q = log_q
+            self.name = node_name
+            self.connection_info = {
+                'address': address,
+                'username': username,
+                'password': password,
+                'key_path': key_path,
+                'timeout': timeout
+            }
+            self.RUN_TIMEOUT = timeout
+            self.node_logger = init_node_logger(self.name)
+            self.log_lock = threading.Lock()
+            self.initialized = True
+            self.log_info("INIT", f"SSHNode initialized with name: {self.name}, address: {address}")
+        elif self.name != node_name:
+            # If the instance exists but with a different name, update it
+            self.name = node_name
+            self.node_logger = init_node_logger(self.name)
+            self.log_info("REINIT", f"SSHNode reinitialized with name: {self.name}, address: {address}")
+
+    def log_info(self, label, message):
+        with self.log_lock:
+            self.node_logger.info(f"{self.name} | {label} | {message}")
+
+    def log_error(self, label, message):
+        with self.log_lock:
+            self.node_logger.error(f"{self.name} | {label} | {message}")
+
+    def log_warning(self, label, message):
+        with self.log_lock:
+            self.node_logger.warning(f"{self.name} | {label} | {message}")
+
+    def log_debug(self, label, message):
+        with self.log_lock:
+            self.node_logger.debug(f"{self.name} | {label} | {message}")
 
     async def open_connection(self):
         address, username, key_path, timeout = self.connection_info['address'], self.connection_info[
             'username'], self.connection_info['key_path'], self.connection_info['timeout']
         try:
-            self.node_logger.info(f"Connecting SSH to {address}")
+            self.log_info("INIT", f"Connecting SSH to {address}")
             self.conn = await asyncssh.connect(
                 address,
                 username=username,
@@ -38,8 +78,7 @@ class SSHNode(ComputeNode):
                 client_keys=[key_path] if key_path else None,
                 term_type='bash'
             )
-            #! this makes me sad
-            self.node_logger.info(f"Connecting SCP to {address}")
+            self.log_info("INIT", f"Connecting SCP to {address}")
             self.scp_conn = await asyncssh.connect(
                 address,
                 username=username,
@@ -50,155 +89,110 @@ class SSHNode(ComputeNode):
             )
 
         except asyncssh.PermissionDenied as auth_err:
-            self.node_logger.warning(f"didn't conenct to {address} with {auth_err}")
-            # raise ValueError('Authentication failed. Check user name and SSH key configuration.') from auth_err
+            self.log_warning("INIT", f"Authentication failed for {address}: {auth_err}")
             return False
         except asyncssh.DisconnectError as ssh_err:
-            self.node_logger.warning(f"disconnected from {address} with {ssh_err}")
-            # raise ValueError("No Session") from ssh_err
+            self.log_warning("INIT", f"Disconnected from {address}: {ssh_err}")
             return False
         except TimeoutError:
-            self.node_logger.warning(f"timeout from {address}")
+            self.log_warning("INIT", f"Timeout connecting to {address}")
             return False
         except socket.gaierror as target_err:
-            self.node_logger.warning(
-                f"Could not connect to {address} with {target_err}"
-            )
+            self.log_warning("INIT", f"Could not connect to {address}: {target_err}")
             return False
         except OSError as err:
-            self.node_logger.warning(f"Got {err} when connecting to {address}")
+            self.log_warning("INIT", f"OS error when connecting to {address}: {err}")
             return False
 
         # Check if GPU is free
         self.free_gpus = await self.check_gpu_free()
-        if self.free_gpus is None:
-            return False
-
-        return True
+        return bool(self.free_gpus)
 
     async def check_gpu_free(self):
-        self.node_logger.info(f"Checking GPU on {self.connection_info['address']}") 
+        self.log_info("GPU_CHECK", f"Checking GPU on {self.connection_info['address']}")
         try:
             await asyncssh.scp(Path(__file__).parent.parent / 'check_gpu.py', (self.scp_conn, '/tmp/check_gpu.py'))
         except asyncssh.sftp.SFTPFailure:
-            self.node_logger.warning(f"Could not copy check_gpu.py to {self.connection_info['address']}")
-            return None
+            self.log_warning("GPU_CHECK", f"Could not copy check_gpu.py to {self.connection_info['address']}")
+            return []
 
-        gpus = await self.conn.run('python /tmp/check_gpu.py')
-        gpus = gpus.stdout
-        if 'No Module named' in gpus:
-            self.node_logger.warning(f"Missing pynvml module on {self.connection_info['address']} - cannot check GPU")
-            raise ValueError('Missing pynvml module on remote machine - cannot check GPU')
+        result = await self.conn.run('python /tmp/check_gpu.py')
+        gpu_info = result.stdout.strip()
+        if 'No Module named' in gpu_info:
+            self.log_warning("GPU_CHECK", f"Missing pynvml module on {self.connection_info['address']} - cannot check GPU")
+            return []
 
-        if gpus.startswith('[[GPU INFO]]'):
-            gpu_info = gpus[14:].split(']')[0]
-            if gpu_info:
-                self.node_logger.info(f"Found free GPU {gpu_info} on {self.connection_info['address']}")
-                return gpu_info
-        return None
+        free_gpus = []
+        for line in gpu_info.split('\n'):
+            if line.startswith('GPU'):
+                parts = line.split(',')
+                if len(parts) == 4:
+                    index, total_memory, free_memory, gpu_util = parts
+                    index = index.split()[1]
+                    free_memory = int(free_memory.split()[0])
+                    gpu_util = float(gpu_util.split()[0])
+                    if (free_memory >= MINIMUM_VRAM and
+                        gpu_util <= USAGE_CRITERION * 100):
+                        free_gpus.append(index)
+
+        self.log_debug("GPU_CHECK", f"Free GPUs after filtering: {free_gpus}")
+        return free_gpus
 
     async def run(self, command, label):
-        """ 
-        Should be non-blocking and return whever a signal is recieved
-        """
-        async with self.conn.create_process(command) as proc: 
-            self.node_logger.info(f"Running {command} on {self.connection_info['address']}")
-            await self.log_q.put((({'status': 'running'}, 'running'), self.connection_info['address'], label))
+        if not self.free_gpus:
+            self.log_warning(label, f"No free GPUs available on {self.connection_info['address']}")
+            return False
 
-            try:
-                async for line in timeout_iterator(
-                    proc.stdout.__aiter__(), self.RUN_TIMEOUT, "TIMEOUT"
-                ):
-                    self.node_logger.info(
-                        f"Got STDIN line {line} from {self.connection_info['address']}"
-                    )
+        gpu_to_use = self.free_gpus.pop(0)
+        self.log_info(label, f"Selected GPU {gpu_to_use} for job on {self.connection_info['address']}")
+
+        env = f"CUDA_VISIBLE_DEVICES={gpu_to_use}"
+        full_command = f"{env} {command}"
+
+        self.log_info(label, f"Running command on {self.connection_info['address']} GPU {gpu_to_use}")
+        await self.log_q.put((({'status': 'running'}, 'running'), self.connection_info['address'], label))
+
+        try:
+            async with self.conn.create_process(full_command) as proc: 
+                async for line in timeout_iterator(proc.stdout, self.RUN_TIMEOUT, "TIMEOUT"):
                     if line == "TIMEOUT":
-                        self.node_logger.warning(
-                            f"Timeout on {self.connection_info['address']}"
-                        )
-                        await self.log_q.put(
-                            (
-                                ({"status": "failed"}, "failed"),
-                                self.connection_info["address"],
-                                label,
-                            )
-                        )
+                        self.log_warning(label, f"Timeout on {self.connection_info['address']}")
+                        await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
                         return False
 
                     parsed_line = self.parse_log_line(line)
-                    if parsed_line == "FAILED":  # TODO Make this not a hack
-                        self.node_logger.warning(
-                            f"Failed (caught via parsed line) on {self.connection_info['address']}"
-                        )
-                        await self.log_q.put(
-                            (
-                                ({"status": "failed"}, "failed"),
-                                self.connection_info["address"],
-                                label,
-                            )
-                        )
+                    if parsed_line == "FAILED":
+                        self.log_warning(label, f"Failed (caught via parsed line) on {self.connection_info['address']}")
+                        await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
                         return False
-                    await self.log_q.put(
-                        ((parsed_line, line), self.connection_info["address"], label)
-                    )
+                    self.log_info(label, f"stdout: {line}")
+                    await self.log_q.put((parsed_line, self.connection_info["address"], label))
 
                 async for err_line in proc.stderr:
-                    self.node_logger.info(
-                        f"Got STDERR line {err_line} from {self.connection_info['address']}"
-                    )
                     if err_line != "":
-                        self.node_logger.warning(f"got error {err_line} for label")
-                        await self.log_q.put(
-                            (
-                                ({"status": "failed"}, "failed"),
-                                self.connection_info["address"],
-                                label,
-                            )
-                        )
+                        self.log_error(label, f"stderr: {err_line}")
+                        await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
                         return False
-            except asyncssh.misc.ConnectionLost as err:
-                self.node_logger.warning(
-                    f"Connection lost {err} on {self.connection_info['address']}"
-                )
-                self.log_q.put(
-                    (
-                        ({"status": "failed"}, "failed"),
-                        self.connection_info["address"],
-                        label,
-                    )
-                )
-                return False
-            except Exception as err:
-                self.node_logger.warning(
-                    f'Got {err} on {self.connection_info["address"]}'
-                )
-                self.log_q.put(
-                    (
-                        ({"status": "failed"}, "failed"),
-                        self.connection_info["address"],
-                        label,
-                    )
-                )
-                return False
+
+        except asyncssh.misc.ConnectionLost as err:
+            self.log_warning(label, f"Connection lost on {self.connection_info['address']}: {err}")
+            await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+            return False
+        except Exception as err:
+            self.log_error(label, f'Unexpected error on {self.connection_info["address"]}: {err}')
+            await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+            return False
+        finally:
+            self.free_gpus.append(gpu_to_use)
+            self.log_info(label, f"Job completed on {self.connection_info['address']}. GPU {gpu_to_use} returned to free_gpus. Current free_gpus: {self.free_gpus}")
+
+        self.log_info(label, f"Job completed successfully on {self.connection_info['address']}")
+        await self.log_q.put(({"status": "completed"}, self.connection_info["address"], label))
         return True
 
-    """
-    LOG Format Description
-    Log lines should contain [[LOG_ACCURACY TRAIN]] or [[LOG_ACCURACY TEST]]
-    Followed by 'sections' divided with ';' and key value pairs divided with ':' (A list of K:V pairs for losses)
-    For example:
-        [[LOG_ACCURACY TRAIN]] Step: 10; Losses: Train: 0.25, Val: 0.65
-    """
-    
     @staticmethod
     def parse_log_line(line):
-        # print line to stdout in spite of rich table
-        # logging.debug(line)
-        # logging.debug("PARSING LINE")
-
         out = None
-        #! FIX this can fail if the log line is part of an error message - we will try to parse
-        #! but the f-strings won't have been evaluated (meaning we can't convert {step} or {loss} to float)
         if '[[LOG_ACCURACY TRAIN]]' in line:
             out = {}
             line = line.split('[[LOG_ACCURACY TRAIN]]')[1]
@@ -213,18 +207,12 @@ class SSHNode(ComputeNode):
                         out[f'loss_total'] = float(loss_value)
                 elif 'Step' in section:
                     out['completed'] = int(section.split('Step:')[1])
-        elif '[[LOG_ACCURACY TEST]]' in line:  #TODO something is broken here
+        elif '[[LOG_ACCURACY TEST]]' in line:
             line = line.split(':')[1]
             out = {'test_acc': float(line.strip())}
         elif 'error' in line or 'RuntimeError' in line or 'failed' in line or 'Killed' in line:
             out = 'FAILED'
         return out
 
-    def scp_put(self, src, dst, recursive=True):
-        self.scp.put(src, dst, recursive=recursive)
-
-    def scp_get(self, src, dst, recursive=True):
-        self.scp.get(src, dst, recursive=recursive)
-
     def __str__(self) -> str:
-        return f'SSH Node {self.connection_info["address"]} with user {self.connection_info["username"]}'
+        return f'SSH Node {self.name} ({self.connection_info["address"]}) with user {self.connection_info["username"]}'

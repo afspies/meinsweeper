@@ -3,6 +3,7 @@ import pytest
 from meinsweeper.meinsweeper import run_sweep
 from meinsweeper.modules.logger import MSLogger
 import asyncio
+import tempfile
 
 # Set the debug flag for the test
 os.environ['MEINSWEEPER_DEBUG'] = 'True'
@@ -26,7 +27,7 @@ print('Initial step logged')
 device = torch.device('cuda')
 tensor = torch.rand(10000, 10000, device=device)
 print(f'Created tensor of shape {tensor.shape} on {device}')
-0
+
 # Wait for 5 seconds
 print('Waiting for 5 seconds')
 time.sleep(5)
@@ -37,8 +38,10 @@ print('Final step logged')
 print("Job completed")
     """
 
-    # Create a list of commands for the sweep
-    commands = [(dummy_job_cmd, f"job{i}") for i in range(3)]
+    # Write the Python script to a temporary file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
+        temp_file.write(dummy_job_cmd)
+        temp_file_path = temp_file.name
 
     # Define targets (using local_async nodes)
     targets = {
@@ -56,17 +59,15 @@ print("Job completed")
         }
     }
 
-    # Create a log queue to capture all messages
-    log_q = asyncio.Queue()
+    # Create a list of shell commands for the sweep
+    commands = [(f"python {temp_file_path}", f"job{i}") for i in range(4)]  # Increased to 4 jobs
 
     # Run the sweep
     await run_sweep(commands, targets, steps=2)
 
-    # Print all messages from the log queue
-    print("\nLog messages:")
-    while not log_q.empty():
-        msg = await log_q.get()
-        print(msg)
+    # Clean up the temporary file
+    os.unlink(temp_file_path)
+
 
     print("Sweep completed")
 

@@ -57,10 +57,11 @@ class LogParser():
             msg = await self.log_q.get()
             if isinstance(msg, tuple) and len(msg) == 3:
                 content, addr, label = msg
-                if isinstance(content, str) and '[[LOG_ACCURACY' in content:
-                    # This is an MSLogger output, log it
-                    logging.getLogger('MSLogger').info(f"{addr} - {label}: {content}")
-                self.table.update(content, addr, label)
+                if isinstance(content, str):
+                    # Instead of printing, update the table
+                    self.table.update(content, addr, label)
+                elif isinstance(content, dict):
+                    self.table.update(content, addr, label)
             self.log_q.task_done()
 
     def complete(self, live_session):
