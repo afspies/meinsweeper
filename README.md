@@ -2,7 +2,7 @@
 <img src="meinsweeper/logo.png" align="right"
      alt="Minesweeper image taken from https://www.pngwing.com/en/free-png-vxhwi" width="80" height="80">
 
-MeinSweeper is a light-weight framework for running experiments on arbitrary compute nodes
+MeinSweeper is a lightweight framework for running experiments on arbitrary compute nodes, with built-in support for GPU management and job distribution.
 
 ```diff
 - This is still in alpha, and was written for research
@@ -10,50 +10,85 @@ MeinSweeper is a light-weight framework for running experiments on arbitrary com
 ```
 
 ## Installation
-Use the package manager [pip](https://pip.pypa.io/en/stable/) to install MeinSweeper.
+Use the package manager [pip](https://pip.pypa.io/en/stable/) to install MeinSweeper:
 
-```bash
-pip install meinsweeper
-```
+  ```bash
+  pip install meinsweeper
+  ```
+
+## Features
+- Asynchronous job execution
+- Support for multiple node types (SSH and Local)
+- Automatic GPU management and allocation
+- Retry mechanism for failed jobs and unavailable nodes
+- Configurable via environment variables
 
 ## Usage
-### MeinSweeper consists of four components
-### Using Provided Node-types
-```python
-import meinsweeper
+### Basic Usage
+  ```python
+  import meinsweeper
 
-cfg = {'target': 'ssh', ...} 
+  targets = {
+      'local_gpu': {'type': 'local_async', 'params': {'gpus': ['0', '1']}},
+      'remote_server': {'type': 'ssh', 'params': {'address': 'example.com', 'username': 'user', 'key_path': '/path/to/key'}}
+  }
 
-meinsweeper.run(cfg)
-```
+  commands = [
+      ("python script1.py", "job1"), 
+      ("python script2.py", "job2"),
+      # ... more commands
+  ]
 
+  meinsweeper.run_sweep(commands, targets)
+  ```
 
-### With Custom Nodes
-#### Subclass and existing node
-Override the initialization, running or logging behaviour of an existing node type.
-If you would like to establish a generic, and robust, communication class which systematically utilizes STDOUT, that would be nice!.
+### Node Types
+1. **Local Async Node**: Executes jobs on the local machine, managing GPU allocation.
+2. **SSH Node**: Connects to remote machines via SSH, manages GPU allocation, and executes jobs.
 
-#### Create a node class
-```python
-class MyNode(Node):
+Both node types handle GPU checking, allocation, and release automatically.
 
+### Configuration
+MeinSweeper can be configured using environment variables:
 
-```
+- `MINIMUM_VRAM`: Minimum free VRAM required for a GPU to be considered available (in GB, default: 8)
+- `USAGE_CRITERION`: Maximum GPU utilization for a GPU to be considered available (0-1, default: 0.8)
+- `MAX_PROCESSES`: Maximum number of concurrent processes (-1 for no limit, default: -1)
+- `RUN_TIMEOUT`: Timeout for each job execution (in seconds, default: 1200)
+- `MAX_RETRIES`: Maximum number of retries for failed jobs (default: 3)
+- `MEINSWEEPER_RETRY_INTERVAL`: Interval between retrying unavailable nodes (in seconds, default: 450)
+- `MEINSWEEPER_DEBUG`: Enable debug logging (set to 'True' for verbose output)
 
-Specify new target as pascal_case version of class name 
+Example:
+  ```bash
+  export MINIMUM_VRAM=10
+  export USAGE_CRITERION=0.5
+  export MEINSWEEPER_RETRY_INTERVAL=300
+  python your_script.py
+  ```
 
-```python
+## Advanced Usage
+### Custom Node Types
+You can create custom node types by subclassing the `ComputeNode` abstract base class:
 
-cfg = {'target':'my_node', ....}
+  ```python
+  from meinsweeper.modules.nodes.abstract import ComputeNode
 
-meinsweeper.run(cfg)
+  class MyCustomNode(ComputeNode):
+      async def open_connection(self):
+          # Implementation
+      
+      async def run(self, command, label):
+          # Implementation
 
-```
+  # Usage
+  targets = {
+      'custom_node': {'type': 'my_custom_node', 'params': {...}}
+  }
+  ```
 
 ## Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-
-Please make sure to update tests as appropriate.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)
