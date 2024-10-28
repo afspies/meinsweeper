@@ -116,7 +116,20 @@ class SSHNode(ComputeNode):
             self.log_warning("GPU_CHECK", f"Could not copy check_gpu.py to {self.connection_info['address']}")
             return []
 
-        result = await self.conn.run('python /tmp/check_gpu.py')
+        self.log_info("GPU_CHECK", f"Running check_gpu.py on {self.connection_info['address']}")
+        try:
+            result = await asyncio.wait_for(
+                self.conn.run('python /tmp/check_gpu.py'),
+                timeout=self.RUN_TIMEOUT
+            )
+            self.log_info("GPU_CHECK", f"Got response from check_gpu.py - {result.stdout.strip()}")
+        except asyncio.TimeoutError:
+            self.log_warning("GPU_CHECK", f"Timeout while running check_gpu.py on {self.connection_info['address']}")
+            return []
+        except Exception as e:
+            self.log_warning("GPU_CHECK", f"Error running check_gpu.py: {str(e)}")
+            return []
+
         gpu_info = result.stdout.strip()
         if 'No Module named' in gpu_info:
             self.log_warning("GPU_CHECK", f"Missing pynvml module on {self.connection_info['address']} - cannot check GPU")
@@ -124,18 +137,19 @@ class SSHNode(ComputeNode):
 
         free_gpus = []
         for line in gpu_info.split('\n'):
-            if line.startswith('GPU'):
-                parts = line.split(',')
-                if len(parts) == 4:
-                    index, total_memory, free_memory, gpu_util = parts
-                    index = index.split()[1]
-                    free_memory = int(free_memory.split()[0])
-                    gpu_util = float(gpu_util.split()[0])
-                    if (free_memory >= MINIMUM_VRAM and
-                        gpu_util <= USAGE_CRITERION * 100):
-                        free_gpus.append(index)
+            if '[[GPU INFO]]' in line:
+                # Extract GPU indices from the format "[[GPU INFO]] [0,1,2] Free"
+                line = line.replace('[[GPU INFO]]', '')
+                gpu_list = line.split('[')[1].split(']')[0]
+                if gpu_list:  # Only process if there are GPUs listed
+                    if ',' in gpu_list:
+                        free_gpus = gpu_list.split(',')
+                    else:
+                        free_gpus = [gpu_list]
+                    self.log_debug("GPU_CHECK", f"Found free GPUs: {free_gpus}")
+        if not free_gpus:
+            self.log_warning("GPU_CHECK", f"No free GPUs found on {self.connection_info['address']} - got {gpu_info}")
 
-        self.log_debug("GPU_CHECK", f"Free GPUs after filtering: {free_gpus}")
         return free_gpus
 
     async def run(self, command, label):
@@ -152,39 +166,68 @@ class SSHNode(ComputeNode):
         self.log_info(label, f"Running command on {self.connection_info['address']} GPU {gpu_to_use}")
         await self.log_q.put((({'status': 'running'}, 'running'), self.connection_info['address'], label))
 
-        try:
-            async with self.conn.create_process(full_command) as proc: 
-                async for line in timeout_iterator(proc.stdout, self.RUN_TIMEOUT, "TIMEOUT"):
-                    if line == "TIMEOUT":
+        max_retries = 2
+        retry_count = 0
+
+        while retry_count < max_retries:
+            try:
+                # Create a new process for the command
+                async with self.conn.create_process(full_command) as proc:
+                    try:
+                        # Read stdout directly instead of using timeout_iterator
+                        while True:
+                            line = await asyncio.wait_for(proc.stdout.readline(), timeout=self.RUN_TIMEOUT)
+                            if not line:  # EOF
+                                break
+                            
+                            line = line.strip()
+                            if line:
+                                parsed_line = self.parse_log_line(line)
+                                if parsed_line == "FAILED":
+                                    self.log_warning(label, f"Failed (caught via parsed line) on {self.connection_info['address']}")
+                                    await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+                                    return False
+                                self.log_info(label, f"stdout: {line}")
+                                await self.log_q.put((parsed_line, self.connection_info["address"], label))
+
+                        # Check stderr
+                        stderr = await proc.stderr.read()
+                        if stderr:
+                            self.log_error(label, f"stderr: {stderr}")
+                            await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+                            return False
+
+                        # If we get here, command completed successfully
+                        break
+
+                    except asyncio.TimeoutError:
                         self.log_warning(label, f"Timeout on {self.connection_info['address']}")
                         await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
                         return False
 
-                    parsed_line = self.parse_log_line(line)
-                    if parsed_line == "FAILED":
-                        self.log_warning(label, f"Failed (caught via parsed line) on {self.connection_info['address']}")
-                        await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
-                        return False
-                    self.log_info(label, f"stdout: {line}")
-                    await self.log_q.put((parsed_line, self.connection_info["address"], label))
+            except (asyncssh.misc.ConnectionLost, asyncssh.misc.ChannelOpenError) as err:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    self.log_warning(label, f"Connection lost on {self.connection_info['address']} after {max_retries} retries: {err}")
+                    await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+                    return False
+                    
+                self.log_warning(label, f"Connection lost, attempt {retry_count}/{max_retries} to reconnect to {self.connection_info['address']}")
+                try:
+                    if not await self.open_connection():
+                        continue
+                except Exception as e:
+                    self.log_error(label, f"Failed to reconnect: {e}")
+                    continue
 
-                async for err_line in proc.stderr:
-                    if err_line != "":
-                        self.log_error(label, f"stderr: {err_line}")
-                        await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
-                        return False
+            except Exception as err:
+                self.log_error(label, f'Unexpected error on {self.connection_info["address"]}: {err}')
+                await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+                return False
 
-        except asyncssh.misc.ConnectionLost as err:
-            self.log_warning(label, f"Connection lost on {self.connection_info['address']}: {err}")
-            await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
-            return False
-        except Exception as err:
-            self.log_error(label, f'Unexpected error on {self.connection_info["address"]}: {err}')
-            await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
-            return False
-        finally:
-            self.free_gpus.append(gpu_to_use)
-            self.log_info(label, f"Job completed on {self.connection_info['address']}. GPU {gpu_to_use} returned to free_gpus. Current free_gpus: {self.free_gpus}")
+        # Always return the GPU to the pool
+        self.free_gpus.append(gpu_to_use)
+        self.log_info(label, f"Job completed on {self.connection_info['address']}. GPU {gpu_to_use} returned to free_gpus. Current free_gpus: {self.free_gpus}")
 
         self.log_info(label, f"Job completed successfully on {self.connection_info['address']}")
         await self.log_q.put(({"status": "completed"}, self.connection_info["address"], label))

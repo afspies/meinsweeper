@@ -42,15 +42,33 @@ def check_gpu_usage(threshold_vram_usage=4000, max_gpus=2, wait=False, sleep_tim
         gpus_to_use = ",".join(free_gpus)
         return gpus_to_use
 
-    # while True:
-        # gpus_to_use = _check()
-        # if gpus_to_use or not wait:
-            # break
-        # print(f"No free GPUs found, retrying in {sleep_time}s")
-        # time.sleep(sleep_time)
-
     gpus_to_use = _check()
     print(f"[[GPU INFO]] [{gpus_to_use}] Free")
+
+
+check_gpu_usage()
+
+
+# # ----------------------------------------------------------------------------------------------------------------------
+# import pynvml as pynvml
+# import psutil
+# def check_gpu_usage():
+#     pynvml.nvmlInit()
+#     print ("Driver Version:", pynvml.nvmlSystemGetDriverVersion())
+#     deviceCount = pynvml.nvmlDeviceGetCount()
+#     for i in range(deviceCount):
+#         handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+#         mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+#         print ("Device", i, ":", pynvml.nvmlDeviceGetName(handle), [bytes2human(x) for x in [mem.total, mem.free, mem.used]])
+
+#         procs = [*pynvml.nvmlDeviceGetComputeRunningProcesses(handle), *pynvml.nvmlDeviceGetGraphicsRunningProcesses(handle)]
+#         for p in procs:
+#             # print(p.pid, p.usedGpuMemory if isinstance(p.usedGpuMemory, int) else -1)
+#             process = psutil.Process(p.pid)
+#             print(process.name(), process.username())
+#     pynvml.nvmlShutdown()
+# ----------------------------------------------------------------------------------------------------------------------
+
 
 # def check_gpu_usage(process_exceptions=['Xorg'], user_exceptions=[''], min_memory=6, base_on_memory=True, base_on_process=True):
 #     # Process exceptions -> ignore these procs
@@ -84,27 +102,3 @@ def check_gpu_usage(threshold_vram_usage=4000, max_gpus=2, wait=False, sleep_tim
 
 #     print(f"[[GPU INFO]] [{','.join(free_gpus)}] Free")
 #     pynvml.nvmlShutdown()
-
-
-check_gpu_usage()
-
-
-# # ----------------------------------------------------------------------------------------------------------------------
-# import pynvml as pynvml
-# import psutil
-# def check_gpu_usage():
-#     pynvml.nvmlInit()
-#     print ("Driver Version:", pynvml.nvmlSystemGetDriverVersion())
-#     deviceCount = pynvml.nvmlDeviceGetCount()
-#     for i in range(deviceCount):
-#         handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-#         mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-#         print ("Device", i, ":", pynvml.nvmlDeviceGetName(handle), [bytes2human(x) for x in [mem.total, mem.free, mem.used]])
-
-#         procs = [*pynvml.nvmlDeviceGetComputeRunningProcesses(handle), *pynvml.nvmlDeviceGetGraphicsRunningProcesses(handle)]
-#         for p in procs:
-#             # print(p.pid, p.usedGpuMemory if isinstance(p.usedGpuMemory, int) else -1)
-#             process = psutil.Process(p.pid)
-#             print(process.name(), process.username())
-#     pynvml.nvmlShutdown()
-# ----------------------------------------------------------------------------------------------------------------------
