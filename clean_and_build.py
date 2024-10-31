@@ -8,7 +8,6 @@ from pathlib import Path
 # Try to use the standard library tomllib (Python 3.11+)
 # Otherwise fall back to tomli/toml
 try:
-    import tomllib
     import tomllib as tomli  # for reading
     from tomllib import dump as toml_dump  # will raise error since tomllib is read-only
 except ImportError:

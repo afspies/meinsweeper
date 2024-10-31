@@ -1,5 +1,8 @@
 from time import time as time_now
 from .helpers.utils import get_time_diff
+import os
+from datetime import datetime
+import sys
 
 import logging
 from logging import Logger
@@ -12,6 +15,10 @@ import asyncio
 
 TABLE_REFRESH_RATE = 3  # Hz
 
+# Local logging configuration from environment variables
+ENABLE_LOCAL_LOGGING = os.environ.get('MS_ENABLE_LOCAL_LOGGING', '').lower() == 'true'
+LOG_DIR = os.environ.get('MS_LOG_DIR', 'logs')
+
 #-------------------------------------------------------
 # This class will allow people to log in a fashion compliant with MeinSweeper
 # RUNS ON REMOTE
@@ -20,6 +27,36 @@ class MSLogger():
     losses and print them in a format compatible with MeinSweeper"""
     def __init__(self):
         self.step = {'train': 0, 'val': 0, 'test': 0}
+        
+        # Setup local logging if enabled via environment variable
+        if ENABLE_LOCAL_LOGGING:
+            # Create logs directory if it doesn't exist
+            os.makedirs(LOG_DIR, exist_ok=True)
+            
+            # Create timestamp for unique log file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_file = os.path.join(LOG_DIR, f"meinsweeper_{timestamp}.log")
+            
+            # Setup file logger
+            self.file_logger = logging.getLogger(f'meinsweeper_logger_{timestamp}')
+            self.file_logger.setLevel(logging.DEBUG)
+            
+            # Create file handler
+            fh = logging.FileHandler(log_file)
+            fh.setLevel(logging.DEBUG)
+            
+            # Create formatter
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            fh.setFormatter(formatter)
+            
+            # Add handler to logger
+            self.file_logger.addHandler(fh)
+            
+            # Redirect stdout and stderr to the log file
+            sys.stdout = LoggerWriter(self.file_logger.info)
+            sys.stderr = LoggerWriter(self.file_logger.error)
+            
+            self.file_logger.info(f"Local logging initialized - Log file: {log_file}")
 
     def log_loss(self, loss: float, mode: str = 'train', step: int = None):
         assert mode in ['train', 'val', 'test'], f"Only modes 'train', 'val' and 'test' are supported"
@@ -29,18 +66,22 @@ class MSLogger():
 
         log_str = f'[[LOG_ACCURACY {mode.upper()}]] Step: {step}; Losses: {mode.capitalize()}: {loss}'
         print(log_str, flush=True)
+        
+        if ENABLE_LOCAL_LOGGING:
+            self.file_logger.info(log_str)
 
-    # def __getstate__(self):
-    #     state = self.__dict__.copy()
-    #     state["python_logger"] = None
-    #     return state
+# Add this helper class to handle stdout/stderr redirection
+class LoggerWriter:
+    def __init__(self, logger_func):
+        self.logger_func = logger_func
+        self.buf = []
 
-    # def __setstate__(self, d):
-    #     self.__dict__.update(d)  # I *think* this is a safe way to do it
-    #     self.python_logger = logging.getLogger(
-    #         'meinsweeper_logger'
-    #     )
-
+    def write(self, msg):
+        if msg and not msg.isspace():
+            self.logger_func(msg.rstrip())
+    
+    def flush(self):
+        pass
 
 # ------------------------------------------------------
 # This class will display logging info in a rich table
