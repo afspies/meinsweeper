@@ -3,6 +3,7 @@ from .helpers.utils import get_time_diff
 import os
 from datetime import datetime
 import sys
+import socket
 
 import logging
 from logging import Logger
@@ -19,6 +20,9 @@ TABLE_REFRESH_RATE = 3  # Hz
 ENABLE_LOCAL_LOGGING = os.environ.get('MS_ENABLE_LOCAL_LOGGING', '').lower() == 'true'
 LOG_DIR = os.environ.get('MS_LOG_DIR', 'logs')
 
+# Get hostname for unique logging
+HOSTNAME = socket.gethostname()
+
 #-------------------------------------------------------
 # This class will allow people to log in a fashion compliant with MeinSweeper
 # RUNS ON REMOTE
@@ -33,20 +37,20 @@ class MSLogger():
             # Create logs directory if it doesn't exist
             os.makedirs(LOG_DIR, exist_ok=True)
             
-            # Create timestamp for unique log file
+            # Create timestamp and include hostname for unique log file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_file = os.path.join(LOG_DIR, f"meinsweeper_{timestamp}.log")
+            log_file = os.path.join(LOG_DIR, f"meinsweeper_{HOSTNAME}_{timestamp}.log")
             
-            # Setup file logger
-            self.file_logger = logging.getLogger(f'meinsweeper_logger_{timestamp}')
+            # Setup file logger with hostname in logger name
+            self.file_logger = logging.getLogger(f'meinsweeper_logger_{HOSTNAME}_{timestamp}')
             self.file_logger.setLevel(logging.DEBUG)
             
-            # Create file handler
-            fh = logging.FileHandler(log_file)
+            # Create file handler with exclusive write mode
+            fh = logging.FileHandler(log_file, mode='x')  # 'x' mode ensures file doesn't exist
             fh.setLevel(logging.DEBUG)
             
-            # Create formatter
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            # Create formatter with hostname
+            formatter = logging.Formatter(f'%(asctime)s - {HOSTNAME} - %(levelname)s - %(message)s')
             fh.setFormatter(formatter)
             
             # Add handler to logger
@@ -56,7 +60,7 @@ class MSLogger():
             sys.stdout = LoggerWriter(self.file_logger.info)
             sys.stderr = LoggerWriter(self.file_logger.error)
             
-            self.file_logger.info(f"Local logging initialized - Log file: {log_file}")
+            self.file_logger.info(f"Local logging initialized on {HOSTNAME} - Log file: {log_file}")
 
     def log_loss(self, loss: float, mode: str = 'train', step: int = None):
         assert mode in ['train', 'val', 'test'], f"Only modes 'train', 'val' and 'test' are supported"
