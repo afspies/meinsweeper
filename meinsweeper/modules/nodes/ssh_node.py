@@ -4,6 +4,7 @@ import asyncio
 import asyncssh
 import threading
 import os
+import traceback
 
 from meinsweeper.modules.helpers.debug_logging import init_node_logger
 from meinsweeper.modules.helpers.utils import timeout_iterator
@@ -172,29 +173,44 @@ class SSHNode(ComputeNode):
         while retry_count < max_retries:
             try:
                 # Create a new process for the command
+                self.log_debug(label, f"Creating process for command: {full_command}")
                 async with self.conn.create_process(full_command) as proc:
                     try:
                         # Read stdout directly instead of using timeout_iterator
                         while True:
-                            line = await asyncio.wait_for(proc.stdout.readline(), timeout=self.RUN_TIMEOUT)
-                            if not line:  # EOF
-                                break
-                            
-                            line = line.strip()
-                            if line:
-                                parsed_line = self.parse_log_line(line)
-                                if parsed_line == "FAILED":
-                                    self.log_warning(label, f"Failed (caught via parsed line) on {self.connection_info['address']}")
-                                    await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
-                                    return False
-                                self.log_info(label, f"stdout: {line}")
-                                await self.log_q.put((parsed_line, self.connection_info["address"], label))
+                            try:
+                                line = await asyncio.wait_for(proc.stdout.readline(), timeout=self.RUN_TIMEOUT)
+                                if not line:  # EOF
+                                    self.log_debug(label, "Process stdout reached EOF")
+                                    break
+                                
+                                line = line.strip()
+                                if line:
+                                    parsed_line = self.parse_log_line(line)
+                                    if parsed_line == "FAILED":
+                                        self.log_warning(label, f"Failed (caught via parsed line) on {self.connection_info['address']}")
+                                        await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+                                        return False
+                                    self.log_info(label, f"stdout: {line}")
+                                    await self.log_q.put((parsed_line, self.connection_info["address"], label))
+
+                            except asyncio.TimeoutError:
+                                self.log_warning(label, f"Timeout while reading stdout on {self.connection_info['address']}")
+                                raise
 
                         # Check stderr
                         stderr = await proc.stderr.read()
                         if stderr:
-                            self.log_error(label, f"stderr: {stderr}")
-                            await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+                            self.log_error(label, f"stderr output: {stderr}")
+                            await self.log_q.put(({"status": "failed", "stderr": stderr}, self.connection_info["address"], label))
+                            return False
+
+                        # Get exit status
+                        exit_status = await proc.wait()
+                        self.log_debug(label, f"Process exit status: {exit_status}")
+                        if exit_status != 0:
+                            self.log_error(label, f"Process exited with non-zero status: {exit_status}")
+                            await self.log_q.put(({"status": "failed", "exit_status": exit_status}, self.connection_info["address"], label))
                             return False
 
                         # If we get here, command completed successfully
@@ -202,14 +218,15 @@ class SSHNode(ComputeNode):
 
                     except asyncio.TimeoutError:
                         self.log_warning(label, f"Timeout on {self.connection_info['address']}")
-                        await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+                        await self.log_q.put(({"status": "failed", "error": "timeout"}, self.connection_info["address"], label))
                         return False
 
             except (asyncssh.misc.ConnectionLost, asyncssh.misc.ChannelOpenError) as err:
                 retry_count += 1
+                self.log_error(label, f"SSH connection error: {str(err)}\nTraceback:\n{traceback.format_exc()}")
                 if retry_count >= max_retries:
                     self.log_warning(label, f"Connection lost on {self.connection_info['address']} after {max_retries} retries: {err}")
-                    await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+                    await self.log_q.put(({"status": "failed", "error": str(err), "traceback": traceback.format_exc()}, self.connection_info["address"], label))
                     return False
                     
                 self.log_warning(label, f"Connection lost, attempt {retry_count}/{max_retries} to reconnect to {self.connection_info['address']}")
@@ -217,12 +234,12 @@ class SSHNode(ComputeNode):
                     if not await self.open_connection():
                         continue
                 except Exception as e:
-                    self.log_error(label, f"Failed to reconnect: {e}")
+                    self.log_error(label, f"Failed to reconnect: {e}\nTraceback:\n{traceback.format_exc()}")
                     continue
 
             except Exception as err:
-                self.log_error(label, f'Unexpected error on {self.connection_info["address"]}: {err}')
-                await self.log_q.put(({"status": "failed"}, self.connection_info["address"], label))
+                self.log_error(label, f'Unexpected error on {self.connection_info["address"]}: {err}\nTraceback:\n{traceback.format_exc()}')
+                await self.log_q.put(({"status": "failed", "error": str(err), "traceback": traceback.format_exc()}, self.connection_info["address"], label))
                 return False
 
         # Always return the GPU to the pool

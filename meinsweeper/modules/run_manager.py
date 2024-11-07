@@ -44,6 +44,7 @@ class RunManager(object):
     async def start_run(self):
         self.target_q = asyncio.PriorityQueue()
         for name, target in self.targets.items():
+            print(f"Putting target {name} into queue")
             await self.target_q.put(Target(name, target, retries=MAX_RETRIES))
 
         self.retry_task = asyncio.create_task(self.retry_unavailable_targets())

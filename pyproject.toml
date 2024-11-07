@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meinsweeper"
-version = "0.3.2"
+version = "0.3.3"
 description = "MeinSweeper is a light-weight framework for running experiments on arbitrary compute nodes"
 readme = "README.md"
 classifiers = [ "Programming Language :: Python :: 3", "License :: OSI Approved :: MIT License", "Operating System :: OS Independent",]

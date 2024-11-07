@@ -6,6 +6,7 @@ import tempfile
 import shlex
 import threading
 import sys
+import traceback
 
 from meinsweeper.modules.helpers.debug_logging import init_node_logger, DEBUG
 from meinsweeper.modules.helpers.utils import timeout_iterator
@@ -107,45 +108,33 @@ class LocalAsyncNode(ComputeNode):
         self.log_info(label, f"Running command on {self.name} GPU {gpu_to_use} (CUDA_VISIBLE_DEVICES={gpu_to_use})")
         await self.log_q.put((({'status': 'running'}, 'running'), self.name, label))
 
-        # Modify the command to print the actual GPU being used
-        modified_command = f"""
-import torch
-import os
-print(f"Actual GPU being used: {{torch.cuda.current_device()}}")
-print(f"Number of available GPUs: {{torch.cuda.device_count()}}")
-print(f"CUDA_VISIBLE_DEVICES: {{os.environ.get('CUDA_VISIBLE_DEVICES', 'Not set')}}")
-"""
-
-        # Write the modified command to a temporary Python script
-        script_path = Path(temp_dir) / f"{label}_script.py"
-        with open(script_path, 'w') as f:
-            f.write(modified_command)
-
-        # Construct the full command
-        full_command = f"{sys.executable} {script_path} && {command}"
-
         try:
+            self.log_debug(label, f"Creating subprocess with command: {command}")
             process = await asyncio.create_subprocess_shell(
-                full_command,
+                command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
-                cwd=Path.cwd()  # Use the current working directory
+                cwd=Path.cwd()
             )
 
             async def read_stream(stream, is_stderr=False):
                 while True:
-                    line = await stream.readline()
-                    if not line:
-                        break
-                    line = line.decode().strip()
-                    if line:  # Only process non-empty lines
-                        if is_stderr:
-                            self.log_error(label, f"{self.name} stderr: {line}")
-                            await self.log_q.put((f"ERROR: {line}", self.name, label))
-                        else:
-                            self.log_info(label, f"{self.name} stdout: {line}")
-                            await self.log_q.put((line, self.name, label))
+                    try:
+                        line = await stream.readline()
+                        if not line:
+                            self.log_debug(label, "Stream reached EOF")
+                            break
+                        line = line.decode().strip()
+                        if line:  # Only process non-empty lines
+                            if is_stderr:
+                                self.log_error(label, f"{self.name} stderr: {line}")
+                                await self.log_q.put((f"ERROR: {line}", self.name, label))
+                            else:
+                                self.log_info(label, f"{self.name} stdout: {line}")
+                                await self.log_q.put((line, self.name, label))
+                    except Exception as e:
+                        self.log_error(label, f"Error reading from {'stderr' if is_stderr else 'stdout'}: {e}\nTraceback:\n{traceback.format_exc()}")
 
             # Read both stdout and stderr
             await asyncio.gather(
@@ -154,16 +143,21 @@ print(f"CUDA_VISIBLE_DEVICES: {{os.environ.get('CUDA_VISIBLE_DEVICES', 'Not set'
             )
 
             return_code = await process.wait()
+            self.log_debug(label, f"Process exit code: {return_code}")
+            
             if return_code != 0:
                 self.log_warning(label, f"Job failed with return code {return_code} on {self.name}")
                 await self.log_q.put(({"status": "failed", "return_code": return_code}, self.name, label))
                 return False
 
+        except asyncio.CancelledError:
+            self.log_error(label, f"Job was cancelled on {self.name}")
+            await self.log_q.put(({"status": "cancelled"}, self.name, label))
+            return False
+
         except Exception as e:
-            self.log_error(label, f"Error running job on {self.name}: {str(e)}")
-            import traceback
-            tb = traceback.format_exc()
-            await self.log_q.put(({"status": "failed", "error": str(e), "traceback": tb}, self.name, label))
+            self.log_error(label, f"Error running job on {self.name}: {str(e)}\nTraceback:\n{traceback.format_exc()}")
+            await self.log_q.put(({"status": "failed", "error": str(e), "traceback": traceback.format_exc()}, self.name, label))
             return False
 
         finally:

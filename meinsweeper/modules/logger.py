@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 import sys
 import socket
+import traceback
+import threading
 
 import logging
 from logging import Logger
@@ -31,6 +33,7 @@ class MSLogger():
     losses and print them in a format compatible with MeinSweeper"""
     def __init__(self):
         self.step = {'train': 0, 'val': 0, 'test': 0}
+        self.log_lock = threading.Lock()  # Add thread safety
         
         # Setup local logging if enabled via environment variable
         if ENABLE_LOCAL_LOGGING:
@@ -49,12 +52,27 @@ class MSLogger():
             fh = logging.FileHandler(log_file, mode='x')  # 'x' mode ensures file doesn't exist
             fh.setLevel(logging.DEBUG)
             
-            # Create formatter with hostname
-            formatter = logging.Formatter(f'%(asctime)s - {HOSTNAME} - %(levelname)s - %(message)s')
+            # Create formatter with hostname and process ID
+            formatter = logging.Formatter(
+                f'%(asctime)s - {HOSTNAME} - PID:%(process)d - TID:%(thread)d - %(levelname)s - %(message)s'
+            )
             fh.setFormatter(formatter)
             
             # Add handler to logger
             self.file_logger.addHandler(fh)
+            
+            # Log system information
+            self.file_logger.info(f"=== System Information ===")
+            self.file_logger.info(f"Hostname: {HOSTNAME}")
+            self.file_logger.info(f"Python version: {sys.version}")
+            self.file_logger.info(f"Process ID: {os.getpid()}")
+            self.file_logger.info(f"Working directory: {os.getcwd()}")
+            self.file_logger.info(f"Command line: {' '.join(sys.argv)}")
+            self.file_logger.info(f"Environment variables: {dict(os.environ)}")
+            self.file_logger.info(f"======================")
+            
+            # Add exception hook to catch unhandled exceptions
+            sys.excepthook = self.handle_exception
             
             # Redirect stdout and stderr to the log file
             sys.stdout = LoggerWriter(self.file_logger.info)
@@ -62,17 +80,64 @@ class MSLogger():
             
             self.file_logger.info(f"Local logging initialized on {HOSTNAME} - Log file: {log_file}")
 
+    def handle_exception(self, exc_type, exc_value, exc_traceback):
+        """Handle uncaught exceptions by logging them"""
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Call the default handler for KeyboardInterrupt
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        with self.log_lock:
+            self.file_logger.error("Uncaught exception:", exc_info=(exc_type, exc_value, exc_traceback))
+
+    def log_error(self, error_msg: str, include_trace: bool = True):
+        """Log an error with optional stack trace"""
+        with self.log_lock:
+            if ENABLE_LOCAL_LOGGING:
+                if include_trace:
+                    self.file_logger.error(f"ERROR: {error_msg}\nTraceback:\n{traceback.format_exc()}")
+                else:
+                    self.file_logger.error(f"ERROR: {error_msg}")
+            # Also print to ensure it shows up in meinsweeper's logs
+            print(f"[[ERROR]] {error_msg}", flush=True)
+
+    def log_warning(self, warning_msg: str):
+        """Log a warning message"""
+        with self.log_lock:
+            if ENABLE_LOCAL_LOGGING:
+                self.file_logger.warning(f"WARNING: {warning_msg}")
+            print(f"[[WARNING]] {warning_msg}", flush=True)
+
+    def log_debug(self, debug_msg: str):
+        """Log a debug message"""
+        with self.log_lock:
+            if ENABLE_LOCAL_LOGGING:
+                self.file_logger.debug(debug_msg)
+            print(f"[[DEBUG]] {debug_msg}", flush=True)
+
     def log_loss(self, loss: float, mode: str = 'train', step: int = None):
         assert mode in ['train', 'val', 'test'], f"Only modes 'train', 'val' and 'test' are supported"
         if step is None:
             step = self.step[mode]
             self.step[mode] += 1
 
-        log_str = f'[[LOG_ACCURACY {mode.upper()}]] Step: {step}; Losses: {mode.capitalize()}: {loss}'
-        print(log_str, flush=True)
-        
+        try:
+            log_str = f'[[LOG_ACCURACY {mode.upper()}]] Step: {step}; Losses: {mode.capitalize()}: {loss}'
+            print(log_str, flush=True)
+            
+            if ENABLE_LOCAL_LOGGING:
+                with self.log_lock:
+                    self.file_logger.info(log_str)
+        except Exception as e:
+            self.log_error(f"Failed to log loss: {str(e)}")
+
+    def __del__(self):
+        """Cleanup when logger is destroyed"""
         if ENABLE_LOCAL_LOGGING:
-            self.file_logger.info(log_str)
+            self.file_logger.info("Logger shutting down")
+            for handler in self.file_logger.handlers:
+                handler.close()
+                self.file_logger.removeHandler(handler)
 
 # Add this helper class to handle stdout/stderr redirection
 class LoggerWriter:
