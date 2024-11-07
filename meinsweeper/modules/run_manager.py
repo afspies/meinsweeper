@@ -25,6 +25,10 @@ class RunManager(object):
     """ The RunManager spawns processes on the target nodes from the pool of available ones
     """
     def __init__(self, targets: dict, task_q: asyncio.Queue, log_q: asyncio.Queue) -> None:
+        # Clear any existing SSH node instances
+        from .nodes.ssh_node import SSHNode
+        SSHNode.clear_instances()
+        
         self.targets = targets
         self.max_proc = min(len(targets), MAX_PROCESSES) if MAX_PROCESSES != -1 else len(targets)
         self.log_q = log_q

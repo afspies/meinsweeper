@@ -276,3 +276,9 @@ class SSHNode(ComputeNode):
 
     def __str__(self) -> str:
         return f'SSH Node {self.name} ({self.connection_info["address"]}) with user {self.connection_info["username"]}'
+
+    @classmethod
+    def clear_instances(cls):
+        """Clear all stored instances"""
+        with cls._lock:
+            cls._instances.clear()
