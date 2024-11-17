@@ -68,5 +68,5 @@ MINOR = _version_minor
 MICRO = _version_micro
 VERSION = __version__
 PACKAGE_DATA = {'MeinSweeper': [pjoin('data', '*')]}
-REQUIRES = ["nvidia-ml-py==11.450.51", "asyncssh", "rich"]
+REQUIRES = ["nvidia-ml-py==11.450.51", "asyncssh", "rich", "watchdog"]
 PYTHON_REQUIRES = ">= 3.7"

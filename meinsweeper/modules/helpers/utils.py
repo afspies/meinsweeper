@@ -102,3 +102,12 @@ def bytes2human(x):  # pylint: disable=too-many-return-statements
         return '{:.2f}PiB'.format(round(x / PiB, 2))
     return '{:.1f}PiB'.format(round(x / PiB, 1))
 # ----------------------------------------------------------------------------------------------------------------------
+import os
+LOGGING_DEBUG = os.getenv('MEINSWEEPER_LOGGING_DEBUG', 'False').lower() == 'true'
+
+# Replace existing debug_print calls with logging-specific debug prints
+def debug_print(*args, **kwargs):
+    """Print debug messages when MEINSWEEPER_DEBUG environment variable is True"""
+    if (LOGGING_DEBUG and any('log' in str(arg).lower() for arg in args)):
+        print(*args, **kwargs)
+# ----------------------------------------------------------------------------------------------------------------------
