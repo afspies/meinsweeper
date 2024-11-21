@@ -119,14 +119,11 @@ class RunManager(object):
                     self.logger.info(f"Worker {worker_id} received shutdown signal")
                     break
 
-                # Tasks are tuples of (command, label)
                 command, task_id = task
                 self.logger.info(f"Worker {worker_id}: Starting task {task_id}")
                 
-                # Track task start time
                 start_time = time.time()
                 last_activity = start_time
-                ACTIVITY_TIMEOUT = 300  # 5 minutes
 
                 try:
                     node = None
@@ -138,28 +135,48 @@ class RunManager(object):
                             # Get a node and track it
                             target = await self.target_q.get()
                             node = self.create_node(target)
+                            
                             if not node:
                                 self.logger.error(f"Worker {worker_id}: No nodes available for task {task_id}")
-                                await asyncio.sleep(10)  # Wait before retry
+                                await asyncio.sleep(10)
                                 retry_count += 1
+                                continue
+
+                            # Check if node has available GPUs
+                            if not await node.has_available_gpus():
+                                self.logger.warning(f"Worker {worker_id}: Node {node.name} has no available GPUs")
+                                # Move node to unavailable targets and continue
+                                self.unavailable_targets[target.name] = (time.time(), target.details)
+                                self.target_q.task_done()
+                                # Don't put the node back in the queue
                                 continue
 
                             self.logger.info(f"Worker {worker_id}: Got node {node.name} for task {task_id}")
                             
-                            # Set up task monitoring
                             monitor_task = asyncio.create_task(
                                 self._monitor_task_activity(worker_id, task_id, node, start_time)
                             )
 
-                            # Run the task
                             success = await node.run(command, task_id)
-                            last_activity = time.time()  # Update activity timestamp
+                            last_activity = time.time()
 
                             if success:
                                 self.logger.info(f"Worker {worker_id}: Task {task_id} completed successfully on {node.name}")
+                                # Only put the node back if it was successful
+                                await self.target_q.put(target)
                                 break
                             else:
+                                # Check if failure was due to GPU availability
+                                if not await node.has_available_gpus():
+                                    self.logger.warning(f"Worker {worker_id}: Node {node.name} has no available GPUs after failed run")
+                                    self.unavailable_targets[target.name] = (time.time(), target.details)
+                                    self.target_q.task_done()
+                                    # Don't put the node back in the queue
+                                    continue
+                                
                                 self.logger.error(f"Worker {worker_id}: Task {task_id} failed on {node.name}, retrying")
+                                # Only put the node back if failure wasn't due to GPU availability
+                                await self.target_q.put(target)
                                 retry_count += 1
                                 
                         except asyncio.CancelledError:
@@ -177,13 +194,9 @@ class RunManager(object):
                                 except asyncio.CancelledError:
                                     pass
                             
-                            # Return node to pool if we have one
-                            if node:
-                                await self.target_q.put(target)
-                                
-                        # Wait before retry
-                        if retry_count < max_retries:
-                            await asyncio.sleep(10 * (retry_count + 1))  # Exponential backoff
+                    # Wait before retry
+                    if retry_count < max_retries:
+                        await asyncio.sleep(10 * (retry_count + 1))  # Exponential backoff
 
                     if retry_count >= max_retries:
                         self.logger.error(f"Worker {worker_id}: Task {task_id} failed after {max_retries} retries")
@@ -219,8 +232,12 @@ class RunManager(object):
                 if not connection_healthy:
                     self.logger.warning(f"Worker {worker_id}: Node {node.name} connection unhealthy for task {task_id} after {int(elapsed)}s")
                 
-                # Check process state if available
-                if hasattr(node, 'process') and node.process:
+                # Only check process info if process exists and is running
+                if (hasattr(node, 'process') and 
+                    node.process and 
+                    hasattr(node.process, 'returncode') and 
+                    node.process.returncode is None):  # Process is still running
+                    
                     try:
                         if hasattr(node, '_get_process_info'):
                             process_info = await node._get_process_info(node.process)

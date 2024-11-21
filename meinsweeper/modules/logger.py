@@ -401,18 +401,41 @@ class DisplayTable():
         else:
             host_pid = self.job_pids[job_key]
 
-        progress['completed'] = progress.get('completed', 0)
-        progress['loss_total'] = progress.get('loss_total', 0)
-        
-        failed = progress.get('status', '') == 'failed'
-        if not failed:
-            self.progress_bars.update(host_pid, **progress)
+        # Handle failed jobs
+        if isinstance(progress, dict) and progress.get('status') == 'failed':
+            # Hide the failed task and remove it from tracking
+            self.progress_bars.update(host_pid, visible=False)
+            if host_pid in self.completed_tasks:
+                self.completed_tasks.remove(host_pid)
+            if job_key in self.job_pids:
+                del self.job_pids[job_key]
+            return
 
-        if progress.get('completed', 0) >= (self.steps or 100) or 'Job completed' in str(content):
-            if host_pid not in self.completed_tasks:
-                self.num_runs_completed += 1
-                self.completed_tasks.add(host_pid)
-            self.progress_bars.update(host_pid, completed=self.steps or 100, visible=False)
+        # Check for completion conditions
+        completed = False
+        if isinstance(progress, dict):
+            completed = (
+                progress.get('status') == 'completed' or
+                progress.get('final', False) or
+                progress.get('completed', 0) >= (self.steps or 100)
+            )
+
+        if completed and host_pid not in self.completed_tasks:
+            self.num_runs_completed += 1
+            self.completed_tasks.add(host_pid)
+            # Hide the task and ensure it shows as 100% complete
+            self.progress_bars.update(
+                host_pid, 
+                completed=self.steps or 100,
+                visible=False
+            )
+            return
+
+        # Only update non-completed tasks
+        if not completed and not progress.get('status') == 'failed':
+            progress['completed'] = progress.get('completed', 0)
+            progress['loss_total'] = progress.get('loss_total', 0)
+            self.progress_bars.update(host_pid, **progress)
 
     @staticmethod
     def parse_log_line(line):

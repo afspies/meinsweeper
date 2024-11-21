@@ -17,6 +17,10 @@ from .abstract import ComputeNode
 MINIMUM_VRAM = int(os.environ.get('MINIMUM_VRAM', 10)) * 1024  # Convert GB to MB
 USAGE_CRITERION = float(os.environ.get('USAGE_CRITERION', 0.1))
 
+class RetryableError(Exception):
+    """Custom exception for retryable SSH operations"""
+    pass
+
 class SSHNode(ComputeNode):
     _instances = {}
     _connections = {}
@@ -75,19 +79,29 @@ class SSHNode(ComputeNode):
                         login_timeout=self.connection_info['timeout'],
                         encoding='utf-8',
                         client_keys=[self.connection_info['key_path']] if self.connection_info['key_path'] else None,
-                        keepalive_interval=30,  # Send keepalive every 30 seconds
-                        keepalive_count_max=4,  # Allow 4 missed keepalives before considering connection dead
+                        keepalive_interval=30,
+                        keepalive_count_max=4,
                         window=self.max_buffer_size,
-                        max_pktsize=32768  # 32KB packet size
+                        max_pktsize=32768
                     ),
                     timeout=self.connection_info['timeout']
                 )
+                
+                # Verify connection is working
+                test_result = await asyncio.wait_for(
+                    self.conn.run('echo "test"'),
+                    timeout=5.0
+                )
+                if test_result.exit_status != 0:
+                    raise ConnectionError("Connection test failed")
                 
                 self.last_heartbeat = time.time()
                 return True
                 
             except Exception as e:
                 self.log_error("CONN", f"Failed to open connection: {str(e)}\n{traceback.format_exc()}")
+                # Ensure connections are cleaned up on failure
+                await self._close_connections()
                 return False
 
     async def _close_connections(self):
@@ -150,13 +164,24 @@ class SSHNode(ComputeNode):
                     raise ConnectionError(f"Failed to establish connection to {address}")
 
             # Now execute with retry strategy
-            result = await retry_strategy.execute(self._check_gpu_free_internal)
-            # Ensure we return a mutable list
-            self.log_debug("GPU_CHECK", f"GPU check result type: {type(result)}, value: {result}")
-            return list(result) if result else []
+            success, result, last_error = await retry_strategy.execute(self._check_gpu_free_internal)
+            
+            if not success:
+                self.log_error("GPU_CHECK", f"GPU check failed after retries: {last_error}")
+                return []
+            
+            # Ensure we return a list of integers
+            if result is None:
+                return []
+            
+            if not isinstance(result, list):
+                self.log_error("GPU_CHECK", f"Unexpected result type: {type(result)}")
+                return []
+            
+            return list(result)  # Ensure we return a mutable list
             
         except Exception as e:
-            self.log_error("GPU_CHECK", f"Unexpected error during GPU check on {address}: {str(e)}")
+            self.log_error("GPU_CHECK", f"Unexpected error during GPU check on {address}: {str(e)}\n{traceback.format_exc()}")
             return []
 
     async def _check_gpu_free_internal(self):
@@ -177,8 +202,22 @@ class SSHNode(ComputeNode):
             except Exception as e:
                 self.log_warning("GPU_CHECK", f"Failed to clean up temporary script {script_path}: {str(e)}")
             
-            # Ensure we return a mutable list
-            return list(gpus) if gpus else []
+            # Ensure we return a list of integers
+            if isinstance(gpus, (list, tuple)):
+                try:
+                    # Convert string GPU indices to integers
+                    gpu_list = [int(str(gpu).strip()) for gpu in gpus if str(gpu).strip()]
+                    self.log_debug("GPU_CHECK", f"Parsed GPU indices: {gpu_list}")
+                    return gpu_list
+                except (ValueError, TypeError, AttributeError) as e:
+                    self.log_error("GPU_CHECK", f"Error parsing GPU indices: {str(e)}")
+                    return []
+            elif isinstance(gpus, bool):
+                self.log_error("GPU_CHECK", "Received boolean instead of GPU list")
+                return []
+            else:
+                self.log_error("GPU_CHECK", f"Unexpected GPU list type: {type(gpus)}")
+                return []
 
         except asyncssh.misc.ChannelOpenError:
             self.log_warning("GPU_CHECK", "SSH channel closed, attempting to reconnect")
@@ -189,7 +228,8 @@ class SSHNode(ComputeNode):
         except Exception as e:
             if isinstance(e, (asyncssh.misc.ChannelOpenError, ConnectionError)):
                 raise RetryableError(str(e))
-            raise
+            self.log_error("GPU_CHECK", f"Unexpected error in GPU check: {str(e)}\n{traceback.format_exc()}")
+            return []
 
     async def _copy_gpu_check_script(self):
         """Helper to copy the GPU check script with node-specific name"""
@@ -243,6 +283,10 @@ class SSHNode(ComputeNode):
 
     def _parse_gpu_check_output(self, gpu_info: str) -> list[str]:
         """Helper to parse GPU check output"""
+        if not isinstance(gpu_info, str):
+            self.log_error("GPU_CHECK", f"Invalid GPU info type: {type(gpu_info)}")
+            return []
+
         if 'No Module named' in gpu_info:
             self.log_warning("GPU_CHECK", f"Missing pynvml module on {self.connection_info['address']} - cannot check GPU")
             return []
@@ -251,14 +295,18 @@ class SSHNode(ComputeNode):
         for line in gpu_info.split('\n'):
             if '[[GPU INFO]]' in line:
                 # Extract GPU indices from the format "[[GPU INFO]] [0,1,2] Free"
-                line = line.replace('[[GPU INFO]]', '')
-                gpu_list = line.split('[')[1].split(']')[0]
-                if gpu_list:  # Only process if there are GPUs listed
-                    if ',' in gpu_list:
-                        free_gpus = gpu_list.split(',')
-                    else:
-                        free_gpus = [gpu_list]
-                    self.log_debug("GPU_CHECK", f"Found free GPUs: {free_gpus}")
+                line = line.replace('[[GPU INFO]]', '').strip()
+                # Extract content between square brackets
+                if '[' in line and ']' in line:
+                    gpu_list = line[line.find('[')+1:line.find(']')]
+                    if gpu_list:  # Only process if there are GPUs listed
+                        if ',' in gpu_list:
+                            free_gpus = [gpu.strip() for gpu in gpu_list.split(',') if gpu.strip()]
+                        else:
+                            gpu = gpu_list.strip()
+                            if gpu:  # Only add non-empty values
+                                free_gpus = [gpu]
+                        self.log_debug("GPU_CHECK", f"Found free GPUs: {free_gpus}")
 
         if not free_gpus:
             self.log_warning("GPU_CHECK", f"No free GPUs found on {self.connection_info['address']} - got {gpu_info}")
@@ -297,8 +345,9 @@ class SSHNode(ComputeNode):
     async def _get_process_info(self, proc):
         """Get detailed information about a running process"""
         try:
-            if not hasattr(proc, 'pid') or proc.pid is None:
-                self.log_warning("PROC_INFO", "No PID available for process")
+            if (not hasattr(proc, 'pid') or 
+                proc.pid is None or 
+                hasattr(proc, 'returncode') and proc.returncode is not None):
                 return None
 
             # Run ps command to get process info
@@ -307,7 +356,6 @@ class SSHNode(ComputeNode):
             )
             
             if result.exit_status != 0:
-                self.log_warning("PROC_INFO", f"Process {proc.pid} not found")
                 return None
 
             info = result.stdout.strip()
@@ -320,7 +368,7 @@ class SSHNode(ComputeNode):
             return dict(zip(fields, values))
 
         except Exception as e:
-            self.log_error("PROC_INFO", f"Error getting process info: {str(e)}")
+            self.log_debug("PROC_INFO", f"Error getting process info: {str(e)}")  # Changed to debug level
             return None
 
     async def _handle_process_output(self, proc, label):
@@ -334,6 +382,12 @@ class SSHNode(ComputeNode):
         SILENCE_TIMEOUT = 300.0
         HEARTBEAT_LOG_INTERVAL = 300.0
         MAX_BUFFER_SIZE = self.max_buffer_size
+        process_completed = False
+        
+        # Store recent output for completion detection
+        if not hasattr(proc, '_recent_output'):
+            proc._recent_output = []
+        RECENT_OUTPUT_MAX = 20  # Keep last 20 lines
 
         async def flush_buffer():
             nonlocal stdout_buffer, buffer_size
@@ -344,8 +398,8 @@ class SSHNode(ComputeNode):
                 buffer_size = 0
             return True
 
-        while True:
-            try:
+        try:
+            while True:
                 current_time = time.time()
                 
                 # Check for prolonged silence
@@ -354,22 +408,13 @@ class SSHNode(ComputeNode):
                         self.log_warning(label, f"No output received for {int(current_time - last_output)}s")
                         last_heartbeat_log = current_time
                         
-                        # Verify connection and process state
-                        async with self.connection_lock:
-                            if not await self._check_connection_health():
-                                self.log_error(label, "Connection appears unhealthy during silence period")
-                                await flush_buffer()
-                                raise ConnectionError("Connection lost during prolonged silence")
-                            
-                            proc_info = await self._get_process_info(proc)
-                            if proc_info:
-                                self.log_info(label, f"Process state: {proc_info['state']}, CPU: {proc_info['cpu']}%, MEM: {proc_info['mem']}%")
+                        if not await self._check_connection_health():
+                            await flush_buffer()
+                            raise ConnectionError("Connection lost during prolonged silence")
 
-                # Read with timeout
                 try:
-                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=self.RUN_TIMEOUT)
+                    line = await asyncio.wait_for(proc.stdout.readline(), timeout=30.0)
                 except asyncio.TimeoutError:
-                    # On timeout, flush buffer and check connection
                     await flush_buffer()
                     if not await self._check_connection_health():
                         raise ConnectionError("Connection lost during read timeout")
@@ -377,6 +422,7 @@ class SSHNode(ComputeNode):
 
                 if not line:
                     self.log_debug(label, "Process stdout closed")
+                    process_completed = True
                     break
 
                 self.last_heartbeat = current_time
@@ -384,6 +430,11 @@ class SSHNode(ComputeNode):
 
                 line = line.strip()
                 if line:
+                    # Store recent output for completion detection
+                    proc._recent_output.append(line)
+                    if len(proc._recent_output) > RECENT_OUTPUT_MAX:
+                        proc._recent_output.pop(0)
+
                     line_size = len(line.encode('utf-8'))
                     if buffer_size + line_size > MAX_BUFFER_SIZE:
                         await flush_buffer()
@@ -401,12 +452,20 @@ class SSHNode(ComputeNode):
                             if not await self._check_connection_health():
                                 raise ConnectionError("SSH connection lost after log flush")
 
-            except Exception as e:
-                self.log_error(label, f"Error in process output handling: {str(e)}\n{traceback.format_exc()}")
-                await flush_buffer()
-                raise
-
-        return await flush_buffer()
+        except Exception as e:
+            self.log_error(label, f"Error in process output handling: {str(e)}\n{traceback.format_exc()}")
+            await flush_buffer()
+            raise
+        finally:
+            if process_completed:
+                # Send explicit completion status with final state
+                await self.log_q.put(({
+                    "status": "completed",
+                    "completed": 100,  # Ensure 100% completion
+                    "visible": False,  # Hide from display
+                    "final": True     # Mark as final update
+                }, self.connection_info["address"], label))
+            return await flush_buffer()
 
     async def _check_connection_health(self):
         """Enhanced connection health check with detailed diagnostics"""
@@ -446,170 +505,169 @@ class SSHNode(ComputeNode):
         except Exception as e:
             self.log_error("PROC_TERM", f"Error terminating process: {str(e)}")
 
+    async def _check_completion_indicators(self, proc, label):
+        """Check for various completion indicators in process output"""
+        recent_output = getattr(proc, '_recent_output', [])
+        
+        # Common completion indicators (all lowercase for case-insensitive comparison)
+        completion_indicators = [
+            "cleaning up temporary",
+            "completed successfully",
+            "training completed",
+            "completed [",  # Common format: "Completed [74.95s]"
+            "wandb: synced",  # WandB completion message
+            "wandb: \\ finished",
+            "finished successfully"
+        ]
+        
+        # Error indicators that shouldn't be treated as completion (all lowercase)
+        error_indicators = [
+            "error:",
+            "exception:",
+            "failed:",
+            "killed",
+            "terminated",
+            "core dumped"
+        ]
+        
+        # Check for completion indicators
+        found_completion = False
+        for line in recent_output:
+            line_lower = line.lower()
+            
+            # Skip if line contains error indicators
+            if any(err in line_lower for err in error_indicators):
+                continue
+            
+            if any(indicator in line_lower for indicator in completion_indicators):
+                found_completion = True
+                self.log_info(label, f"Found completion indicator: {line}")
+                break
+        
+        # Additional checks for specific patterns (also case-insensitive)
+        if not found_completion:
+            # Check for wandb run completion pattern
+            wandb_pattern = any("wandb: synced" in line.lower() and "artifact file(s)" in line.lower() 
+                              for line in recent_output)
+            if wandb_pattern:
+                found_completion = True
+                self.log_info(label, "Found WandB completion pattern")
+        
+        return found_completion
+
     async def run(self, command, label):
         """Run a command on the remote node with GPU allocation."""
-        try:
-            # First validate SSH connection
-            if not hasattr(self, 'conn') or not self.conn:
-                self.log_error(label, "No SSH connection available, attempting to reconnect")
-                if not await self.open_connection():
-                    self.log_error(label, "Failed to establish SSH connection")
-                    return False
+        max_connection_retries = 3
+        connection_retry_count = 0
+        
+        while connection_retry_count < max_connection_retries:
+            try:
+                # First validate SSH connection
+                if not hasattr(self, 'conn') or not self.conn:
+                    self.log_error(label, "No SSH connection available, attempting to reconnect")
+                    if not await self.open_connection():
+                        connection_retry_count += 1
+                        await asyncio.sleep(5 * (connection_retry_count + 1))
+                        continue
 
-            # Validate connection health
-            if not await self._check_connection_health():
-                self.log_error(label, "SSH connection is unhealthy, attempting to reconnect")
-                if not await self.open_connection():
-                    self.log_error(label, "Failed to re-establish SSH connection")
-                    return False
+                # Validate connection health
+                if not await self._check_connection_health():
+                    self.log_warning(label, f"SSH connection unhealthy (attempt {connection_retry_count + 1}/{max_connection_retries})")
+                    if not await self.open_connection():
+                        connection_retry_count += 1
+                        await asyncio.sleep(5 * (connection_retry_count + 1))
+                        continue
 
-            if not self.free_gpus:
-                # Double check GPU availability before reporting none available
-                self.log_debug(label, "No free GPUs, rechecking availability")
-                checked_gpus = await self.check_gpu_free()
-                self.log_debug(label, f"Checked GPUs type: {type(checked_gpus)}, value: {checked_gpus}")
-                # Ensure we have a mutable list
-                self.free_gpus = list(checked_gpus) if checked_gpus else []
-                self.log_debug(label, f"Final free_gpus type: {type(self.free_gpus)}, value: {self.free_gpus}")
                 if not self.free_gpus:
-                    self.log_warning(label, f"No free GPUs available on {self.connection_info['address']}")
-                    return False
-
-            try:
-                # Ensure we're working with a mutable list
-                if not isinstance(self.free_gpus, list):
-                    self.log_debug(label, f"Converting free_gpus from {type(self.free_gpus)} to list")
-                    self.free_gpus = list(self.free_gpus)
-                
-                gpu_to_use = self.free_gpus.pop(0)
-                self.log_info(label, f"Selected GPU {gpu_to_use} for job on {self.connection_info['address']}")
-            except (IndexError, AttributeError) as e:
-                self.log_error(label, f"Error selecting GPU: {str(e)} - free_gpus type: {type(self.free_gpus)}")
-                return False
-
-            env = f"CUDA_VISIBLE_DEVICES={gpu_to_use}"
-            full_command = f"{env} {command}"
-
-            self.log_info(label, f"Running command on {self.connection_info['address']} GPU {gpu_to_use}")
-            self.log_debug(label, f"Full command: {full_command}")
-            
-            # Test command execution with a simple echo
-            try:
-                test_result = await self.conn.run('echo "Testing command execution"')
-                if test_result.exit_status != 0:
-                    self.log_error(label, "Failed to execute test command")
-                    return False
-                self.log_debug(label, "Test command executed successfully")
-            except Exception as e:
-                self.log_error(label, f"Test command failed: {str(e)}")
-                return False
-
-            await self.log_q.put((({'status': 'running'}, 'running'), self.connection_info['address'], label))
-
-            max_retries = 2
-            retry_count = 0
-            success = False
-
-            try:
-                while retry_count < max_retries:
-                    try:
-                        self.log_debug(label, f"Creating process for command: {full_command}")
-                        async with self.conn.create_process(full_command, term_type='xterm') as proc:
-                            self.log_debug(label, "Process created successfully")
-                            self.process = proc
-                            monitor_task = asyncio.create_task(self._monitor_process(proc, label))
-                            self.log_debug(label, "Monitor task created")
-
-                            try:
-                                # Handle process output
-                                self.log_debug(label, "Starting to handle process output")
-                                if not await self._handle_process_output(proc, label):
-                                    self.log_error(label, "Process output handling failed")
-                                    return False
-
-                                # Process stderr
-                                self.log_debug(label, "Reading stderr")
-                                stderr = await proc.stderr.read()
-                                if stderr:
-                                    self.log_debug(label, f"Stderr content: {stderr.decode('utf-8', errors='ignore')}")
-                                if not await self._process_stderr(stderr, label):
-                                    self.log_error(label, "Stderr processing failed")
-                                    return False
-
-                                # Check exit status
-                                self.log_debug(label, "Waiting for process to complete")
-                                exit_status = await proc.wait()
-                                self.log_debug(label, f"Process exit status: {exit_status}")
-                                if exit_status != 0:
-                                    self.log_error(label, f"Process exited with non-zero status: {exit_status}")
-                                    await self.log_q.put(({"status": "failed", "exit_status": exit_status}, 
-                                                        self.connection_info["address"], label))
-                                    return False
-
-                                success = True
-                                break
-
-                            except asyncio.TimeoutError:
-                                self.log_error(label, "Process timed out")
-                                await self._terminate_process(proc)
-                                timeout_msg = f"Job killed - exceeded timeout of {self.RUN_TIMEOUT} seconds"
-                                self.log_error(label, timeout_msg)
-                                await self.log_q.put((
-                                    {
-                                        "status": "failed", 
-                                        "error": "timeout",
-                                        "message": timeout_msg
-                                    }, 
-                                    self.connection_info["address"], 
-                                    label
-                                ))
-                                return False
-
-                            except ConnectionError as e:
-                                self.log_error(label, f"SSH connection lost: {str(e)}")
-                                await self._terminate_process(proc)
-                                retry_count += 1
-                                if retry_count < max_retries:
-                                    self.log_info(label, f"Retrying command (attempt {retry_count + 1}/{max_retries})")
-                                    continue
-                                return False
-
-                            finally:
-                                if monitor_task and not monitor_task.done():
-                                    monitor_task.cancel()
-                                    try:
-                                        await monitor_task
-                                    except asyncio.CancelledError:
-                                        pass
-
-                    except Exception as err:
-                        self.log_error(label, f'Unexpected error while creating process: {err}\nTraceback:\n{traceback.format_exc()}')
-                        await self.log_q.put(({"status": "failed", "error": str(err), "traceback": traceback.format_exc()}, 
-                                            self.connection_info["address"], label))
-                        retry_count += 1
-                        if retry_count < max_retries:
-                            self.log_info(label, f"Retrying command (attempt {retry_count + 1}/{max_retries})")
-                            continue
+                    # Double check GPU availability before reporting none available
+                    self.log_debug(label, "No free GPUs, rechecking availability")
+                    self.free_gpus = await self.check_gpu_free()  # This now returns a list of integers
+                    if not self.free_gpus:
+                        self.log_warning(label, f"No free GPUs available on {self.connection_info['address']}")
                         return False
 
-                if success:
-                    self.log_info(label, f"Job completed successfully")
-                    await self.log_q.put(({"status": "completed"}, self.connection_info["address"], label))
-                    return True
+                try:
+                    gpu_to_use = self.free_gpus.pop(0)  # This will now be an integer
+                    self.log_info(label, f"Selected GPU {gpu_to_use} for job on {self.connection_info['address']}")
+                except (IndexError, AttributeError) as e:
+                    self.log_error(label, f"Error selecting GPU: {str(e)} - free_gpus type: {type(self.free_gpus)}")
+                    return False
+
+                env = f"CUDA_VISIBLE_DEVICES={gpu_to_use}"
+                full_command = f"{env} {command}"
+
+                self.log_info(label, f"Running command on {self.connection_info['address']} GPU {gpu_to_use}")
+                self.log_debug(label, f"Full command: {full_command}")
+
+                await self.log_q.put((({'status': 'running'}, 'running'), self.connection_info['address'], label))
+
+                try:
+                    self.log_debug(label, f"Creating process for command: {full_command}")
+                    async with self.conn.create_process(full_command, term_type='xterm') as proc:
+                        self.log_debug(label, "Process created successfully")
+                        self.process = proc
+                        monitor_task = asyncio.create_task(self._monitor_process(proc, label))
+
+                        try:
+                            if not await self._handle_process_output(proc, label):
+                                self.log_error(label, "Process output handling failed")
+                                return False
+
+                            stderr = await proc.stderr.read()
+                            if not await self._process_stderr(stderr, label):
+                                self.log_error(label, "Stderr processing failed")
+                                return False
+
+                            exit_status = await proc.wait()
+                            
+                            # Enhanced completion detection
+                            if exit_status != 0:
+                                # Check for completion indicators
+                                if await self._check_completion_indicators(proc, label):
+                                    self.log_info(label, "Process completed successfully despite non-zero exit status")
+                                    return True
+                                    
+                                # If no completion indicators found, log the error and fail
+                                self.log_error(label, f"Process exited with non-zero status: {exit_status}")
+                                self.log_debug(label, f"Last output lines: {getattr(proc, '_recent_output', [])[-5:]}")
+                                await self.log_q.put(({"status": "failed", "exit_status": exit_status}, 
+                                                    self.connection_info["address"], label))
+                                return False
+
+                            return True
+
+                        except asyncio.TimeoutError:
+                            self.log_error(label, "Process timed out")
+                            await self._terminate_process(proc)
+                            return False
+
+                        finally:
+                            if monitor_task and not monitor_task.done():
+                                monitor_task.cancel()
+                                try:
+                                    await monitor_task
+                                except asyncio.CancelledError:
+                                    pass
+
+                except (asyncssh.misc.ChannelOpenError, ConnectionError) as e:
+                    self.log_error(label, f"SSH error: {str(e)}")
+                    connection_retry_count += 1
+                    if connection_retry_count < max_connection_retries:
+                        await asyncio.sleep(5 * (connection_retry_count + 1))
+                        continue
+                    return False
+
+                finally:
+                    # Always return the GPU to the pool
+                    if gpu_to_use not in self.free_gpus:
+                        self.log_info(label, f"Returning GPU {gpu_to_use} to pool")
+                        self.free_gpus.append(gpu_to_use)
+
+            except Exception as e:
+                self.log_error(label, f"Unexpected error in run method: {str(e)}\n{traceback.format_exc()}")
                 return False
 
-            finally:
-                # Always return the GPU to the pool, regardless of success or failure
-                if gpu_to_use not in self.free_gpus:
-                    self.log_info(label, f"Returning GPU {gpu_to_use} to pool")
-                    self.free_gpus.append(gpu_to_use)
-                    # Verify GPU state
-                    current_gpus = await self.check_gpu_free()
-                    self.log_debug(label, f"Current free GPUs after return: {current_gpus}")
-
-        except Exception as e:
-            self.log_error(label, f"Unexpected error in run method: {str(e)}\nTraceback:\n{traceback.format_exc()}")
-            return False
+        return False  # All retries exhausted
 
     async def _monitor_process(self, proc, label):
         """Monitor process resources and health"""
@@ -690,3 +748,12 @@ class SSHNode(ComputeNode):
             cls._connections.clear()
             cls._instances.clear()
             debug_print("SSHNode instances cleared")
+
+    async def has_available_gpus(self):
+        """Check if the node has any available GPUs"""
+        try:
+            free_gpus = await self.check_gpu_free()
+            return len(free_gpus) > 0
+        except Exception as e:
+            self.log_error("GPU_CHECK", f"Error checking GPU availability: {str(e)}")
+            return False
